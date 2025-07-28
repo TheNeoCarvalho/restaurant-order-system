@@ -1,0 +1,1 @@
+{"version":3,"file":"invalid-status-transition.exception.js","sourceRoot":"","sources":["../../../src/order-items/exceptions/invalid-status-transition.exception.ts"],"names":[],"mappings":";;;AAAA,2CAAqD;AAGrD,MAAa,gCAAiC,SAAQ,4BAAmB;IACvE,YAAY,aAA8B,EAAE,SAA0B;QACpE,KAAK,CAAC,oCAAoC,aAAa,SAAS,SAAS,EAAE,CAAC,CAAC;IAC/E,CAAC;CACF;AAJD,4EAIC"}

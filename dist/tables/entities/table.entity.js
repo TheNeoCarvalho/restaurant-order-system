@@ -13,6 +13,7 @@ exports.Table = void 0;
 const typeorm_1 = require("typeorm");
 const class_validator_1 = require("class-validator");
 const table_status_enum_1 = require("../../common/enums/table-status.enum");
+const order_entity_1 = require("../../orders/entities/order.entity");
 let Table = class Table {
     id;
     number;
@@ -20,6 +21,7 @@ let Table = class Table {
     status;
     createdAt;
     updatedAt;
+    orders;
 };
 exports.Table = Table;
 __decorate([
@@ -55,6 +57,10 @@ __decorate([
     (0, typeorm_1.UpdateDateColumn)(),
     __metadata("design:type", Date)
 ], Table.prototype, "updatedAt", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => order_entity_1.Order, order => order.table),
+    __metadata("design:type", Array)
+], Table.prototype, "orders", void 0);
 exports.Table = Table = __decorate([
     (0, typeorm_1.Entity)('tables')
 ], Table);

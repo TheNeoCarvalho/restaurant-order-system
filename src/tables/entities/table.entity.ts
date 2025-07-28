@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { IsNotEmpty, IsNumber, Min } from 'class-validator';
 import { TableStatus } from '../../common/enums/table-status.enum';
+import { Order } from '../../orders/entities/order.entity';
 
 @Entity('tables')
 export class Table {
@@ -38,7 +39,6 @@ export class Table {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  // Relacionamento com pedidos será adicionado quando implementarmos o módulo de orders
-  // @OneToMany(() => Order, order => order.table)
-  // orders: Order[];
+  @OneToMany(() => Order, order => order.table)
+  orders: Order[];
 }
