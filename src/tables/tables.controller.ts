@@ -8,158 +8,136 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { TablesService } from './tables.service';
+import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto } from './dto';
+import { Table } from './entities/table.entity';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/enums/user-role.enum';
 import { User } from '../users/entities/user.entity';
 
+@ApiTags('tables')
+@ApiBearerAuth()
 @Controller('tables')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class TablesController {
-  
-  // Todos os usuários autenticados podem visualizar as mesas
+  constructor(private readonly tablesService: TablesService) {}
+
+  @Post()
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Criar nova mesa (apenas Admin)' })
+  @ApiResponse({ status: 201, description: 'Mesa criada com sucesso', type: Table })
+  @ApiResponse({ status: 409, description: 'Mesa com esse número já existe' })
+  async create(
+    @Body() createTableDto: CreateTableDto,
+    @CurrentUser() user: User,
+  ): Promise<Table> {
+    return await this.tablesService.create(createTableDto);
+  }
+
   @Get()
   @HttpCode(HttpStatus.OK)
-  async findAll(@CurrentUser() user: User) {
-    return {
-      message: 'Lista de todas as mesas',
-      requestedBy: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-      },
-      tables: [
-        { id: 1, number: 1, capacity: 4, status: 'available' },
-        { id: 2, number: 2, capacity: 2, status: 'occupied' },
-        { id: 3, number: 3, capacity: 6, status: 'reserved' },
-      ],
-    };
+  @ApiOperation({ summary: 'Listar todas as mesas' })
+  @ApiResponse({ status: 200, description: 'Lista de mesas', type: [Table] })
+  async findAll(@CurrentUser() user: User): Promise<Table[]> {
+    return await this.tablesService.findAll();
   }
 
-  // Apenas administradores e garçons podem criar novas mesas
-  @Post()
-  @Roles(UserRole.ADMIN, UserRole.WAITER)
-  @HttpCode(HttpStatus.CREATED)
-  async create(@Body() createTableDto: any, @CurrentUser() user: User) {
-    return {
-      message: 'Mesa criada com sucesso',
-      createdBy: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-      },
-      table: {
-        id: 4,
-        ...createTableDto,
-        status: 'available',
-      },
-    };
+  @Get('available')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Listar mesas disponíveis' })
+  @ApiResponse({ status: 200, description: 'Lista de mesas disponíveis', type: [Table] })
+  async findAvailable(@CurrentUser() user: User): Promise<Table[]> {
+    return await this.tablesService.findAvailable();
   }
 
-  // Todos os usuários autenticados podem visualizar uma mesa específica
+  @Get('occupied')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Listar mesas ocupadas' })
+  @ApiResponse({ status: 200, description: 'Lista de mesas ocupadas', type: [Table] })
+  async findOccupied(@CurrentUser() user: User): Promise<Table[]> {
+    return await this.tablesService.findOccupied();
+  }
+
+  @Get('summary')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Resumo do status das mesas' })
+  @ApiResponse({ status: 200, description: 'Resumo das mesas por status' })
+  async getTablesSummary(@CurrentUser() user: User) {
+    return await this.tablesService.getTablesSummary();
+  }
+
   @Get(':id')
   @HttpCode(HttpStatus.OK)
-  async findOne(@Param('id') id: string, @CurrentUser() user: User) {
-    return {
-      message: `Detalhes da mesa ${id}`,
-      requestedBy: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-      },
-      table: {
-        id: parseInt(id),
-        number: parseInt(id),
-        capacity: 4,
-        status: 'available',
-      },
-    };
+  @ApiOperation({ summary: 'Buscar mesa por ID' })
+  @ApiResponse({ status: 200, description: 'Detalhes da mesa', type: Table })
+  @ApiResponse({ status: 404, description: 'Mesa não encontrada' })
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ): Promise<Table> {
+    return await this.tablesService.findOne(id);
   }
 
-  // Apenas administradores podem atualizar configurações das mesas
+  @Get(':id/availability')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verificar disponibilidade da mesa' })
+  @ApiResponse({ status: 200, description: 'Status de disponibilidade' })
+  async checkAvailability(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ): Promise<{ available: boolean }> {
+    const available = await this.tablesService.checkAvailability(id);
+    return { available };
+  }
+
   @Put(':id')
   @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Atualizar mesa (apenas Admin)' })
+  @ApiResponse({ status: 200, description: 'Mesa atualizada com sucesso', type: Table })
+  @ApiResponse({ status: 404, description: 'Mesa não encontrada' })
+  @ApiResponse({ status: 409, description: 'Mesa com esse número já existe' })
   async update(
-    @Param('id') id: string, 
-    @Body() updateTableDto: any, 
-    @CurrentUser() user: User
-  ) {
-    return {
-      message: `Mesa ${id} atualizada com sucesso`,
-      updatedBy: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-      },
-      table: {
-        id: parseInt(id),
-        ...updateTableDto,
-      },
-    };
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateTableDto: UpdateTableDto,
+    @CurrentUser() user: User,
+  ): Promise<Table> {
+    return await this.tablesService.update(id, updateTableDto);
   }
 
-  // Apenas administradores podem deletar mesas
-  @Delete(':id')
-  @Roles(UserRole.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async remove(@Param('id') id: string, @CurrentUser() user: User) {
-    return {
-      message: `Mesa ${id} removida com sucesso`,
-      deletedBy: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-      },
-    };
-  }
-
-  // Garçons e administradores podem alterar status da mesa
   @Put(':id/status')
   @Roles(UserRole.ADMIN, UserRole.WAITER)
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Atualizar status da mesa (Admin e Garçom)' })
+  @ApiResponse({ status: 200, description: 'Status atualizado com sucesso', type: Table })
+  @ApiResponse({ status: 404, description: 'Mesa não encontrada' })
   async updateStatus(
-    @Param('id') id: string,
-    @Body() statusDto: { status: string },
-    @CurrentUser() user: User
-  ) {
-    return {
-      message: `Status da mesa ${id} atualizado para ${statusDto.status}`,
-      updatedBy: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-      },
-      table: {
-        id: parseInt(id),
-        status: statusDto.status,
-      },
-    };
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateStatusDto: UpdateTableStatusDto,
+    @CurrentUser() user: User,
+  ): Promise<Table> {
+    return await this.tablesService.updateStatus(id, updateStatusDto);
   }
 
-  // Endpoint específico para a cozinha visualizar mesas com pedidos
-  @Get('kitchen/with-orders')
-  @Roles(UserRole.KITCHEN)
-  @HttpCode(HttpStatus.OK)
-  async getTablesWithOrders(@CurrentUser() user: User) {
-    return {
-      message: 'Mesas com pedidos pendentes para a cozinha',
-      requestedBy: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-      },
-      tables: [
-        { 
-          id: 2, 
-          number: 2, 
-          status: 'occupied',
-          pendingOrders: [
-            { id: 1, item: 'Hambúrguer', status: 'pending' },
-            { id: 2, item: 'Batata Frita', status: 'in_preparation' },
-          ]
-        },
-      ],
-    };
+  @Delete(':id')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Remover mesa (apenas Admin)' })
+  @ApiResponse({ status: 204, description: 'Mesa removida com sucesso' })
+  @ApiResponse({ status: 404, description: 'Mesa não encontrada' })
+  @ApiResponse({ status: 409, description: 'Não é possível remover mesa ocupada' })
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ): Promise<void> {
+    await this.tablesService.remove(id);
   }
 }
