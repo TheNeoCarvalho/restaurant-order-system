@@ -1,90 +1,26 @@
-import { UserRole } from '../users/enums/user-role.enum';
+import { TablesService } from './tables.service';
+import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto } from './dto';
+import { Table } from './entities/table.entity';
 import { User } from '../users/entities/user.entity';
 export declare class TablesController {
-    findAll(user: User): Promise<{
-        message: string;
-        requestedBy: {
-            id: string;
-            name: string;
-            role: UserRole;
-        };
-        tables: {
-            id: number;
-            number: number;
-            capacity: number;
-            status: string;
-        }[];
+    private readonly tablesService;
+    constructor(tablesService: TablesService);
+    create(createTableDto: CreateTableDto, user: User): Promise<Table>;
+    findAll(user: User): Promise<Table[]>;
+    findAvailable(user: User): Promise<Table[]>;
+    findOccupied(user: User): Promise<Table[]>;
+    getTablesSummary(user: User): Promise<{
+        total: number;
+        available: number;
+        occupied: number;
+        reserved: number;
+        cleaning: number;
     }>;
-    create(createTableDto: any, user: User): Promise<{
-        message: string;
-        createdBy: {
-            id: string;
-            name: string;
-            role: UserRole;
-        };
-        table: any;
+    findOne(id: number, user: User): Promise<Table>;
+    checkAvailability(id: number, user: User): Promise<{
+        available: boolean;
     }>;
-    findOne(id: string, user: User): Promise<{
-        message: string;
-        requestedBy: {
-            id: string;
-            name: string;
-            role: UserRole;
-        };
-        table: {
-            id: number;
-            number: number;
-            capacity: number;
-            status: string;
-        };
-    }>;
-    update(id: string, updateTableDto: any, user: User): Promise<{
-        message: string;
-        updatedBy: {
-            id: string;
-            name: string;
-            role: UserRole;
-        };
-        table: any;
-    }>;
-    remove(id: string, user: User): Promise<{
-        message: string;
-        deletedBy: {
-            id: string;
-            name: string;
-            role: UserRole;
-        };
-    }>;
-    updateStatus(id: string, statusDto: {
-        status: string;
-    }, user: User): Promise<{
-        message: string;
-        updatedBy: {
-            id: string;
-            name: string;
-            role: UserRole;
-        };
-        table: {
-            id: number;
-            status: string;
-        };
-    }>;
-    getTablesWithOrders(user: User): Promise<{
-        message: string;
-        requestedBy: {
-            id: string;
-            name: string;
-            role: UserRole;
-        };
-        tables: {
-            id: number;
-            number: number;
-            status: string;
-            pendingOrders: {
-                id: number;
-                item: string;
-                status: string;
-            }[];
-        }[];
-    }>;
+    update(id: number, updateTableDto: UpdateTableDto, user: User): Promise<Table>;
+    updateStatus(id: number, updateStatusDto: UpdateTableStatusDto, user: User): Promise<Table>;
+    remove(id: number, user: User): Promise<void>;
 }
