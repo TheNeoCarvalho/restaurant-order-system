@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateMenuItemDto = void 0;
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
+const validators_1 = require("../../common/validators");
 class CreateMenuItemDto {
     name;
     description;
@@ -48,10 +49,10 @@ __decorate([
         description: 'Preço do item em reais',
         example: 29.99,
         minimum: 0.01,
+        maximum: 9999.99,
     }),
     (0, class_validator_1.IsNotEmpty)({ message: 'Preço é obrigatório' }),
-    (0, class_validator_1.IsNumber)({ maxDecimalPlaces: 2 }, { message: 'Preço deve ser um número com no máximo 2 casas decimais' }),
-    (0, class_validator_1.Min)(0.01, { message: 'Preço deve ser maior que zero' }),
+    (0, validators_1.IsValidPrice)(),
     __metadata("design:type", Number)
 ], CreateMenuItemDto.prototype, "price", void 0);
 __decorate([

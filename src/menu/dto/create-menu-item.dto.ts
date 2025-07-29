@@ -8,6 +8,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsValidPrice } from '../../common/validators';
 
 export class CreateMenuItemDto {
   @ApiProperty({
@@ -34,13 +35,10 @@ export class CreateMenuItemDto {
     description: 'Preço do item em reais',
     example: 29.99,
     minimum: 0.01,
+    maximum: 9999.99,
   })
   @IsNotEmpty({ message: 'Preço é obrigatório' })
-  @IsNumber(
-    { maxDecimalPlaces: 2 },
-    { message: 'Preço deve ser um número com no máximo 2 casas decimais' },
-  )
-  @Min(0.01, { message: 'Preço deve ser maior que zero' })
+  @IsValidPrice()
   price: number;
 
   @ApiProperty({

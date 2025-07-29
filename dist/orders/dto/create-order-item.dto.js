@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateOrderItemDto = void 0;
 const class_validator_1 = require("class-validator");
+const validators_1 = require("../../common/validators");
 class CreateOrderItemDto {
     menuItemId;
     quantity;
@@ -22,8 +23,7 @@ __decorate([
     __metadata("design:type", String)
 ], CreateOrderItemDto.prototype, "menuItemId", void 0);
 __decorate([
-    (0, class_validator_1.IsNumber)({}, { message: 'Quantidade deve ser um número' }),
-    (0, class_validator_1.Min)(1, { message: 'Quantidade deve ser maior que 0' }),
+    (0, validators_1.IsValidQuantity)(),
     __metadata("design:type", Number)
 ], CreateOrderItemDto.prototype, "quantity", void 0);
 __decorate([

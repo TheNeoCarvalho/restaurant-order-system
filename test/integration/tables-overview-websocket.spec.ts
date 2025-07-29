@@ -3,7 +3,7 @@ import { INestApplication } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule } from '@nestjs/config';
-import { io, Socket } from 'socket.io-client';
+import io, { Socket } from 'socket.io-client';
 import * as request from 'supertest';
 
 import { AppModule } from '../../src/app.module';
@@ -24,9 +24,9 @@ describe('Tables Overview WebSocket Integration', () => {
   let authService: AuthService;
   let usersService: UsersService;
   
-  let adminSocket: Socket;
-  let waiterSocket: Socket;
-  let kitchenSocket: Socket;
+  let adminSocket: typeof Socket;
+  let waiterSocket: typeof Socket;
+  let kitchenSocket: typeof Socket;
   
   let adminToken: string;
   let waiterToken: string;

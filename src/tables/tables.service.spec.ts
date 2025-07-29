@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { TablesService } from './tables.service';
 import { Table } from './entities/table.entity';
+import { Order } from '../orders/entities/order.entity';
 import { TableStatus } from '../common/enums/table-status.enum';
 import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto } from './dto';
 import { OrdersGateway } from '../websocket/orders.gateway';
@@ -21,6 +22,12 @@ describe('TablesService', () => {
     count: jest.fn(),
   };
 
+  const mockOrderRepository = {
+    find: jest.fn(),
+    findOne: jest.fn(),
+    createQueryBuilder: jest.fn(),
+  };
+
   const mockOrdersGateway = {
     notifyNewOrder: jest.fn(),
     notifyOrderItemStatusUpdate: jest.fn(),
@@ -35,6 +42,10 @@ describe('TablesService', () => {
         {
           provide: getRepositoryToken(Table),
           useValue: mockRepository,
+        },
+        {
+          provide: getRepositoryToken(Order),
+          useValue: mockOrderRepository,
         },
         {
           provide: OrdersGateway,

@@ -1,15 +1,16 @@
 import { IsNotEmpty, IsNumber, Min, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsValidTableNumber } from '../../common/validators';
 
 export class CreateTableDto {
   @ApiProperty({
     description: 'Número da mesa',
     example: 1,
     minimum: 1,
+    maximum: 100,
   })
   @IsNotEmpty({ message: 'Número da mesa é obrigatório' })
-  @IsNumber({}, { message: 'Número da mesa deve ser um número' })
-  @Min(1, { message: 'Número da mesa deve ser maior que 0' })
+  @IsValidTableNumber()
   number: number;
 
   @ApiPropertyOptional({

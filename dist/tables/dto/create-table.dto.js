@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateTableDto = void 0;
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
+const validators_1 = require("../../common/validators");
 class CreateTableDto {
     number;
     capacity;
@@ -22,10 +23,10 @@ __decorate([
         description: 'Número da mesa',
         example: 1,
         minimum: 1,
+        maximum: 100,
     }),
     (0, class_validator_1.IsNotEmpty)({ message: 'Número da mesa é obrigatório' }),
-    (0, class_validator_1.IsNumber)({}, { message: 'Número da mesa deve ser um número' }),
-    (0, class_validator_1.Min)(1, { message: 'Número da mesa deve ser maior que 0' }),
+    (0, validators_1.IsValidTableNumber)(),
     __metadata("design:type", Number)
 ], CreateTableDto.prototype, "number", void 0);
 __decorate([

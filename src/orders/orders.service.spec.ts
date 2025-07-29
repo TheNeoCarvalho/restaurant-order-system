@@ -49,6 +49,7 @@ describe('OrdersService', () => {
     notifyOrderItemStatusUpdate: jest.fn(),
     notifyTableStatusUpdate: jest.fn(),
     notifyOrderClosed: jest.fn(),
+    notifyTableOrderUpdate: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -210,7 +211,12 @@ describe('OrdersService', () => {
       mockOrderRepository.findOne
         .mockResolvedValueOnce(mockOrder) // First call in addItemToOrder
         .mockResolvedValueOnce({ ...mockOrder, items: [mockOrderItem] }) // Second call in updateOrderTotal
-        .mockResolvedValueOnce({ ...mockOrder, items: [mockOrderItem] }); // Third call in findOne at the end
+        .mockResolvedValueOnce({ 
+          ...mockOrder, 
+          items: [mockOrderItem],
+          table: { id: 1, number: 1 },
+          waiter: { id: 'waiter-uuid', name: 'Test Waiter' }
+        }); // Third call in findOne at the end
 
       mockMenuItemRepository.findOne.mockResolvedValue(mockMenuItem);
       mockOrderItemRepository.create.mockReturnValue(mockOrderItem);

@@ -9,10 +9,7 @@ async function bootstrap() {
 
   app.enableCors();
   app.setGlobalPrefix('api');
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    transform: true,
-  }));
+  // Global validation pipe will be configured in CommonModule
 
   const config = new DocumentBuilder()
     .setTitle('Restaurant Order API')

@@ -9,10 +9,6 @@ async function bootstrap() {
     const logger = new common_1.Logger('Bootstrap');
     app.enableCors();
     app.setGlobalPrefix('api');
-    app.useGlobalPipes(new common_1.ValidationPipe({
-        whitelist: true,
-        transform: true,
-    }));
     const config = new swagger_1.DocumentBuilder()
         .setTitle('Restaurant Order API')
         .setDescription('Restaurant Order')
