@@ -44,6 +44,9 @@ let TablesController = class TablesController {
     async getTablesSummary(user) {
         return await this.tablesService.getTablesSummary();
     }
+    async getTablesOverview(query, user) {
+        return await this.tablesService.getTablesOverview(query);
+    }
     async findOne(id, user) {
         return await this.tablesService.findOne(id);
     }
@@ -116,6 +119,23 @@ __decorate([
     __metadata("design:paramtypes", [user_entity_1.User]),
     __metadata("design:returntype", Promise)
 ], TablesController.prototype, "getTablesSummary", null);
+__decorate([
+    (0, common_1.Get)('overview'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Visão geral de todas as mesas com informações de pedidos' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista detalhada de mesas com status de pedidos', type: [dto_1.TableOverviewDto] }),
+    (0, swagger_1.ApiQuery)({ name: 'status', enum: ['available', 'occupied', 'reserved', 'cleaning'], required: false }),
+    (0, swagger_1.ApiQuery)({ name: 'hasPendingOrders', type: Boolean, required: false }),
+    (0, swagger_1.ApiQuery)({ name: 'sortBy', enum: ['number', 'status', 'orderDuration', 'pendingItems'], required: false }),
+    (0, swagger_1.ApiQuery)({ name: 'sortOrder', enum: ['ASC', 'DESC'], required: false }),
+    (0, swagger_1.ApiQuery)({ name: 'includeOrderDetails', type: Boolean, required: false }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [dto_1.TablesOverviewQueryDto,
+        user_entity_1.User]),
+    __metadata("design:returntype", Promise)
+], TablesController.prototype, "getTablesOverview", null);
 __decorate([
     (0, common_1.Get)(':id'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),

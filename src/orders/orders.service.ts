@@ -82,6 +82,15 @@ export class OrdersService {
       this.ordersGateway.notifyTableStatusUpdate(updatedTable);
     }
 
+    // Notificar sobre atualização do pedido da mesa para o painel geral
+    this.ordersGateway.notifyTableOrderUpdate(tableId, {
+      orderId: completeOrder.id,
+      totalAmount: completeOrder.totalAmount,
+      itemsCount: completeOrder.items?.length || 0,
+      waiterName: completeOrder.waiter.name,
+      status: completeOrder.status,
+    });
+
     // Se há itens, notificar a cozinha sobre a nova comanda
     if (items.length > 0) {
       this.ordersGateway.notifyNewOrder(completeOrder);
@@ -182,6 +191,15 @@ export class OrdersService {
 
     // Notificar sobre novo item adicionado à comanda (para a cozinha)
     this.ordersGateway.notifyNewOrder(updatedOrder);
+
+    // Notificar sobre atualização do pedido da mesa para o painel geral
+    this.ordersGateway.notifyTableOrderUpdate(updatedOrder.table.id, {
+      orderId: updatedOrder.id,
+      totalAmount: updatedOrder.totalAmount,
+      itemsCount: updatedOrder.items?.length || 0,
+      waiterName: updatedOrder.waiter.name,
+      status: updatedOrder.status,
+    });
 
     return updatedOrder;
   }
@@ -319,6 +337,15 @@ export class OrdersService {
     if (updatedTable) {
       this.ordersGateway.notifyTableStatusUpdate(updatedTable);
     }
+
+    // Notificar sobre atualização do pedido da mesa para o painel geral (mesa liberada)
+    this.ordersGateway.notifyTableOrderUpdate(order.tableId, {
+      orderId: null, // Mesa liberada
+      totalAmount: 0,
+      itemsCount: 0,
+      waiterName: null,
+      status: 'closed',
+    });
 
     return { order: updatedOrder, summary };
   }

@@ -6,14 +6,15 @@ import {
   Delete, 
   Param, 
   Body,
+  Query,
   HttpCode,
   HttpStatus,
   ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { TablesService } from './tables.service';
-import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto } from './dto';
+import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto, TableOverviewDto, TablesOverviewQueryDto } from './dto';
 import { Table } from './entities/table.entity';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -72,6 +73,22 @@ export class TablesController {
   @ApiResponse({ status: 200, description: 'Resumo das mesas por status' })
   async getTablesSummary(@CurrentUser() user: User) {
     return await this.tablesService.getTablesSummary();
+  }
+
+  @Get('overview')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Visão geral de todas as mesas com informações de pedidos' })
+  @ApiResponse({ status: 200, description: 'Lista detalhada de mesas com status de pedidos', type: [TableOverviewDto] })
+  @ApiQuery({ name: 'status', enum: ['available', 'occupied', 'reserved', 'cleaning'], required: false })
+  @ApiQuery({ name: 'hasPendingOrders', type: Boolean, required: false })
+  @ApiQuery({ name: 'sortBy', enum: ['number', 'status', 'orderDuration', 'pendingItems'], required: false })
+  @ApiQuery({ name: 'sortOrder', enum: ['ASC', 'DESC'], required: false })
+  @ApiQuery({ name: 'includeOrderDetails', type: Boolean, required: false })
+  async getTablesOverview(
+    @Query() query: TablesOverviewQueryDto,
+    @CurrentUser() user: User,
+  ): Promise<TableOverviewDto[]> {
+    return await this.tablesService.getTablesOverview(query);
   }
 
   @Get(':id')

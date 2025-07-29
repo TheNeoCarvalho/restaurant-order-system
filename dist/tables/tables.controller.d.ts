@@ -1,5 +1,5 @@
 import { TablesService } from './tables.service';
-import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto } from './dto';
+import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto, TableOverviewDto, TablesOverviewQueryDto } from './dto';
 import { Table } from './entities/table.entity';
 import { User } from '../users/entities/user.entity';
 export declare class TablesController {
@@ -16,6 +16,7 @@ export declare class TablesController {
         reserved: number;
         cleaning: number;
     }>;
+    getTablesOverview(query: TablesOverviewQueryDto, user: User): Promise<TableOverviewDto[]>;
     findOne(id: number, user: User): Promise<Table>;
     checkAvailability(id: number, user: User): Promise<{
         available: boolean;

@@ -10,6 +10,8 @@ export declare class AuthService {
     constructor(usersService: UsersService, jwtService: JwtService, configService: ConfigService);
     validateUser(email: string, password: string): Promise<User | null>;
     login(user: User): Promise<AuthResponseDto>;
+    register(userData: Partial<User>): Promise<AuthResponseDto>;
+    logout(userId: string): Promise<void>;
     generateTokens(payload: JwtPayload): Promise<TokenPair>;
     refreshTokens(refreshToken: string): Promise<AuthResponseDto>;
 }

@@ -347,6 +347,47 @@ export class OrdersGateway implements OnGatewayInit, OnGatewayConnection, OnGate
 
     // Notificar todos os usuários sobre mudanças de status das mesas
     this.server.emit('table-status-updated', notification);
+
+    // Notificar especificamente sobre mudanças no painel geral
+    this.notifyTableOverviewUpdate();
+  }
+
+  /**
+   * Notifica sobre atualizações no painel geral de mesas
+   */
+  notifyTableOverviewUpdate(): void {
+    this.logger.log('Notificando atualização do painel geral de mesas');
+
+    // Emitir evento específico para atualização do painel
+    this.server.emit('tables-overview-update', {
+      timestamp: new Date().toISOString(),
+      message: 'Painel de mesas atualizado',
+    });
+
+    // Emitir também para a room específica do painel de mesas
+    this.server.to('tables-overview').emit('tables-overview-refresh', {
+      timestamp: new Date().toISOString(),
+      message: 'Dados do painel atualizados - refresh necessário',
+    });
+  }
+
+  /**
+   * Notifica sobre mudanças em pedidos que afetam o painel de mesas
+   */
+  notifyTableOrderUpdate(tableId: number, orderData: any): void {
+    this.logger.log(`Notificando atualização de pedido para mesa ${tableId}`);
+
+    const notification = {
+      tableId,
+      orderData,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Notificar sobre mudança específica da mesa
+    this.server.emit('table-order-updated', notification);
+
+    // Notificar atualização geral do painel
+    this.notifyTableOverviewUpdate();
   }
 
   /**
@@ -584,6 +625,115 @@ export class OrdersGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       { id: 2, number: 2, status: 'occupied', capacity: 2 },
       { id: 3, number: 3, status: 'cleaning', capacity: 6 },
     ];
+  }
+
+  /**
+   * Solicitar dados do painel de mesas em tempo real
+   */
+  @SubscribeMessage('request-tables-overview')
+  async handleTablesOverviewRequest(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { 
+      filters?: {
+        status?: string;
+        hasPendingOrders?: boolean;
+        sortBy?: string;
+        sortOrder?: 'ASC' | 'DESC';
+      };
+    },
+  ): Promise<void> {
+    if (!client.user) {
+      client.emit('error', { message: 'Usuário não autenticado' });
+      return;
+    }
+
+    try {
+      this.logger.log(`Solicitação de overview de mesas do cliente ${client.id}`);
+
+      // Aqui você chamaria o TablesService para obter dados reais
+      // const tablesOverview = await this.tablesService.getTablesOverview(data.filters);
+      
+      // Por enquanto, enviamos dados mock
+      const mockTablesOverview = [
+        {
+          id: 1,
+          number: 1,
+          capacity: 4,
+          status: 'available',
+          hasPendingOrders: false,
+          priority: 'low',
+        },
+        {
+          id: 2,
+          number: 2,
+          capacity: 2,
+          status: 'occupied',
+          activeOrderId: 'order-123',
+          waiterName: 'João Silva',
+          orderTotal: 45.99,
+          totalItems: 3,
+          pendingItems: 1,
+          itemsInPreparation: 1,
+          readyItems: 1,
+          orderDurationMinutes: 25,
+          hasPendingOrders: true,
+          priority: 'medium',
+        },
+      ];
+
+      client.emit('tables-overview-data', {
+        tables: mockTablesOverview,
+        timestamp: new Date().toISOString(),
+        filters: data.filters,
+      });
+
+    } catch (error) {
+      this.logger.error(`Erro ao buscar overview de mesas para cliente ${client.id}:`, error);
+      client.emit('tables-overview-error', {
+        message: 'Erro ao buscar dados das mesas',
+        error: error.message,
+      });
+    }
+  }
+
+  /**
+   * Entrar na room específica para atualizações do painel de mesas
+   */
+  @SubscribeMessage('join-tables-overview')
+  async handleJoinTablesOverview(
+    @ConnectedSocket() client: AuthenticatedSocket,
+  ): Promise<void> {
+    if (!client.user) {
+      client.emit('error', { message: 'Usuário não autenticado' });
+      return;
+    }
+
+    await client.join('tables-overview');
+    this.logger.log(`Cliente ${client.id} (${client.user.name}) entrou na room tables-overview`);
+    
+    client.emit('joined-tables-overview', {
+      message: 'Conectado ao painel de mesas em tempo real',
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Sair da room do painel de mesas
+   */
+  @SubscribeMessage('leave-tables-overview')
+  async handleLeaveTablesOverview(
+    @ConnectedSocket() client: AuthenticatedSocket,
+  ): Promise<void> {
+    await client.leave('tables-overview');
+    
+    if (client.user) {
+      this.logger.log(`Cliente ${client.id} (${client.user.name}) saiu da room tables-overview`);
+    }
+    
+    client.emit('left-tables-overview', {
+      message: 'Desconectado do painel de mesas',
+      timestamp: new Date().toISOString(),
+    });
   }
 
   /**

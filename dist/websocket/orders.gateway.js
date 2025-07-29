@@ -30,6 +30,14 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
     connectedClients = new Map();
     userSessions = new Map();
     cleanupInterval;
+    heartbeatInterval;
+    stateVersions = new Map();
+    pendingConflicts = new Map();
+    messageQueue = new Map();
+    HEARTBEAT_INTERVAL = 30000;
+    RECONNECT_TIMEOUT = 60000;
+    MAX_PENDING_MESSAGES = 100;
+    MAX_RECONNECT_ATTEMPTS = 5;
     constructor(jwtService, configService, usersService) {
         this.jwtService = jwtService;
         this.configService = configService;
@@ -40,12 +48,24 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
         this.cleanupInterval = setInterval(() => {
             this.cleanupExpiredSessions();
         }, 60000);
+        this.heartbeatInterval = setInterval(() => {
+            this.performHeartbeatCheck();
+        }, this.HEARTBEAT_INTERVAL);
+        this.setupServerEvents();
     }
     onModuleDestroy() {
         if (this.cleanupInterval) {
             clearInterval(this.cleanupInterval);
             this.logger.log('Cleanup interval cleared');
         }
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.logger.log('Heartbeat interval cleared');
+        }
+        this.server.emit('server-shutdown', {
+            message: 'Servidor será reiniciado em breve',
+            timestamp: new Date().toISOString(),
+        });
     }
     async handleConnection(client) {
         try {
@@ -63,9 +83,15 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
             }
             client.user = user;
             this.connectedClients.set(client.id, client);
-            await this.manageUserSession(client, user);
+            client.connectionId = this.generateConnectionId();
+            client.lastHeartbeat = new Date();
+            client.reconnectAttempts = 0;
+            const isReconnection = await this.manageUserSession(client, user);
             await this.joinRoleBasedRoom(client);
-            this.logger.log(`Cliente ${client.id} conectado como ${user.name} (${user.role})`);
+            this.logger.log(`Cliente ${client.id} conectado como ${user.name} (${user.role}) - ${isReconnection ? 'Reconexão' : 'Nova conexão'}`);
+            if (isReconnection) {
+                await this.processPendingMessages(user.id, client);
+            }
             const syncData = await this.getSyncDataForUser(user);
             client.emit('connected', {
                 message: 'Conectado com sucesso',
@@ -75,7 +101,10 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
                     role: user.role,
                 },
                 syncData,
-                isReconnection: this.isReconnection(user.id),
+                isReconnection,
+                connectionId: client.connectionId,
+                serverTime: Date.now(),
+                heartbeatInterval: this.HEARTBEAT_INTERVAL,
             });
         }
         catch (error) {
@@ -122,7 +151,8 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
     }
     notifyNewOrder(order) {
         this.logger.log(`Notificando novo pedido: ${order.id} para mesa ${order.table.number}`);
-        this.server.to('kitchen').emit('new-order', {
+        const version = this.updateStateVersion('order', order.id, order.waiter.id);
+        const orderData = {
             orderId: order.id,
             tableNumber: order.table.number,
             waiterName: order.waiter.name,
@@ -134,10 +164,14 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
                 status: item.status,
             })),
             createdAt: order.createdAt,
-        });
+            version,
+        };
+        this.broadcastWithAck('order-created', orderData, [user_role_enum_1.UserRole.KITCHEN, user_role_enum_1.UserRole.ADMIN]);
+        this.server.to('kitchen').emit('new-order', orderData);
     }
     notifyOrderItemStatusUpdate(orderItem) {
         this.logger.log(`Notificando mudança de status do item ${orderItem.id}: ${orderItem.status}`);
+        const version = this.updateStateVersion('order-item', orderItem.id, orderItem.statusUpdatedBy?.id || 'system');
         const notification = {
             orderItemId: orderItem.id,
             orderId: orderItem.orderId,
@@ -146,7 +180,9 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
             status: orderItem.status,
             updatedBy: orderItem.statusUpdatedBy?.name,
             updatedAt: orderItem.updatedAt,
+            version,
         };
+        this.broadcastStateChange('order-item-status-updated', notification);
         this.server.to('waiters').emit('order-item-status-updated', notification);
         if (orderItem.status === 'cancelled') {
             this.server.to('kitchen').emit('order-item-cancelled', notification);
@@ -155,24 +191,52 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
     }
     notifyTableStatusUpdate(table) {
         this.logger.log(`Notificando mudança de status da mesa ${table.number}: ${table.status}`);
+        const version = this.updateStateVersion('table', table.id.toString(), 'system');
         const notification = {
             tableId: table.id,
             tableNumber: table.number,
             status: table.status,
             capacity: table.capacity,
             updatedAt: table.updatedAt,
+            version,
         };
+        this.broadcastStateChange('table-status-updated', notification);
         this.server.emit('table-status-updated', notification);
+        this.notifyTableOverviewUpdate();
+    }
+    notifyTableOverviewUpdate() {
+        this.logger.log('Notificando atualização do painel geral de mesas');
+        this.server.emit('tables-overview-update', {
+            timestamp: new Date().toISOString(),
+            message: 'Painel de mesas atualizado',
+        });
+        this.server.to('tables-overview').emit('tables-overview-refresh', {
+            timestamp: new Date().toISOString(),
+            message: 'Dados do painel atualizados - refresh necessário',
+        });
+    }
+    notifyTableOrderUpdate(tableId, orderData) {
+        this.logger.log(`Notificando atualização de pedido para mesa ${tableId}`);
+        const notification = {
+            tableId,
+            orderData,
+            timestamp: new Date().toISOString(),
+        };
+        this.server.emit('table-order-updated', notification);
+        this.notifyTableOverviewUpdate();
     }
     notifyOrderClosed(order) {
         this.logger.log(`Notificando fechamento da comanda ${order.id} da mesa ${order.table.number}`);
+        const version = this.updateStateVersion('order', order.id, order.waiter.id);
         const notification = {
             orderId: order.id,
             tableNumber: order.table.number,
             totalAmount: order.totalAmount,
             closedAt: order.closedAt,
             waiterName: order.waiter.name,
+            version,
         };
+        this.broadcastStateChange('order-closed', notification);
         this.server.to('waiters').emit('order-closed', notification);
         this.server.to('admins').emit('order-closed', notification);
     }
@@ -226,10 +290,14 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
     async manageUserSession(client, user) {
         const existingSession = this.userSessions.get(user.id);
         if (existingSession) {
+            const wasOffline = !existingSession.isOnline;
             existingSession.socketId = client.id;
             existingSession.lastSeen = new Date();
             existingSession.connectionCount++;
-            this.logger.log(`Usuário ${user.name} reconectou (conexão #${existingSession.connectionCount})`);
+            existingSession.connectionId = client.connectionId;
+            existingSession.isOnline = true;
+            this.logger.log(`Usuário ${user.name} reconectou (conexão #${existingSession.connectionCount}) - ${wasOffline ? 'Estava offline' : 'Troca de conexão'}`);
+            return true;
         }
         else {
             this.userSessions.set(user.id, {
@@ -237,21 +305,26 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
                 lastSeen: new Date(),
                 rooms: [],
                 connectionCount: 1,
+                connectionId: client.connectionId,
+                isOnline: true,
+                pendingMessages: [],
+                lastSyncVersion: Date.now(),
             });
             this.logger.log(`Nova sessão criada para usuário ${user.name}`);
+            return false;
         }
     }
     updateUserSessionOnDisconnect(userId) {
         const session = this.userSessions.get(userId);
         if (session) {
             session.lastSeen = new Date();
+            session.isOnline = false;
             setTimeout(() => {
                 const currentSession = this.userSessions.get(userId);
-                if (currentSession && currentSession.lastSeen === session.lastSeen) {
-                    this.userSessions.delete(userId);
-                    this.logger.log(`Sessão expirada para usuário ${userId}`);
+                if (currentSession && !currentSession.isOnline && currentSession.lastSeen === session.lastSeen) {
+                    this.cleanupUserSession(userId);
                 }
-            }, 30000);
+            }, this.RECONNECT_TIMEOUT);
         }
     }
     isReconnection(userId) {
@@ -317,6 +390,75 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
             { id: 3, number: 3, status: 'cleaning', capacity: 6 },
         ];
     }
+    async handleTablesOverviewRequest(client, data) {
+        if (!client.user) {
+            client.emit('error', { message: 'Usuário não autenticado' });
+            return;
+        }
+        try {
+            this.logger.log(`Solicitação de overview de mesas do cliente ${client.id}`);
+            const mockTablesOverview = [
+                {
+                    id: 1,
+                    number: 1,
+                    capacity: 4,
+                    status: 'available',
+                    hasPendingOrders: false,
+                    priority: 'low',
+                },
+                {
+                    id: 2,
+                    number: 2,
+                    capacity: 2,
+                    status: 'occupied',
+                    activeOrderId: 'order-123',
+                    waiterName: 'João Silva',
+                    orderTotal: 45.99,
+                    totalItems: 3,
+                    pendingItems: 1,
+                    itemsInPreparation: 1,
+                    readyItems: 1,
+                    orderDurationMinutes: 25,
+                    hasPendingOrders: true,
+                    priority: 'medium',
+                },
+            ];
+            client.emit('tables-overview-data', {
+                tables: mockTablesOverview,
+                timestamp: new Date().toISOString(),
+                filters: data.filters,
+            });
+        }
+        catch (error) {
+            this.logger.error(`Erro ao buscar overview de mesas para cliente ${client.id}:`, error);
+            client.emit('tables-overview-error', {
+                message: 'Erro ao buscar dados das mesas',
+                error: error.message,
+            });
+        }
+    }
+    async handleJoinTablesOverview(client) {
+        if (!client.user) {
+            client.emit('error', { message: 'Usuário não autenticado' });
+            return;
+        }
+        await client.join('tables-overview');
+        this.logger.log(`Cliente ${client.id} (${client.user.name}) entrou na room tables-overview`);
+        client.emit('joined-tables-overview', {
+            message: 'Conectado ao painel de mesas em tempo real',
+            timestamp: new Date().toISOString(),
+        });
+    }
+    async handleLeaveTablesOverview(client) {
+        await client.leave('tables-overview');
+        if (client.user) {
+            this.logger.log(`Cliente ${client.id} (${client.user.name}) saiu da room tables-overview`);
+        }
+        client.emit('left-tables-overview', {
+            message: 'Desconectado do painel de mesas',
+            timestamp: new Date().toISOString(),
+        });
+    }
     async handleSyncRequest(client) {
         if (!client.user) {
             client.emit('error', { message: 'Usuário não autenticado' });
@@ -331,45 +473,411 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
             client.emit('error', { message: 'Usuário não autenticado' });
             return;
         }
-        const { resourceType, resourceId, clientVersion, serverVersion } = data;
-        this.logger.log(`Resolvendo conflito para ${resourceType}:${resourceId} - Cliente: v${clientVersion}, Servidor: v${serverVersion}`);
-        if (serverVersion > clientVersion) {
-            const latestData = await this.getLatestResourceData(resourceType, resourceId);
+        const { resourceType, resourceId, clientVersion, clientData, conflictStrategy = 'server-wins' } = data;
+        const serverVersion = this.getStateVersion(resourceType, resourceId);
+        this.logger.log(`Resolvendo conflito para ${resourceType}:${resourceId} - Cliente: v${clientVersion}, Servidor: v${serverVersion}, Estratégia: ${conflictStrategy}`);
+        const conflictId = `conflict_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        try {
+            let resolution;
+            switch (conflictStrategy) {
+                case 'server-wins':
+                    const latestData = await this.getLatestResourceData(resourceType, resourceId);
+                    resolution = {
+                        strategy: 'server-wins',
+                        data: latestData,
+                        conflictId,
+                    };
+                    break;
+                case 'client-wins':
+                    if (clientData) {
+                        await this.applyClientData(resourceType, resourceId, clientData, client.user.id);
+                        const newVersion = this.updateStateVersion(resourceType, resourceId, client.user.id);
+                        resolution = {
+                            strategy: 'client-wins',
+                            data: clientData,
+                            conflictId,
+                        };
+                        this.broadcastStateChange(`${resourceType}-updated`, {
+                            resourceType,
+                            resourceId,
+                            data: clientData,
+                            version: newVersion,
+                            updatedBy: client.user.name,
+                        });
+                    }
+                    else {
+                        throw new Error('Dados do cliente não fornecidos para estratégia client-wins');
+                    }
+                    break;
+                case 'merge':
+                    const serverData = await this.getLatestResourceData(resourceType, resourceId);
+                    const mergedData = await this.mergeConflictingData(serverData, clientData, resourceType);
+                    await this.applyClientData(resourceType, resourceId, mergedData, client.user.id);
+                    const mergedVersion = this.updateStateVersion(resourceType, resourceId, client.user.id);
+                    resolution = {
+                        strategy: 'merge',
+                        data: mergedData,
+                        conflictId,
+                    };
+                    this.broadcastStateChange(`${resourceType}-merged`, {
+                        resourceType,
+                        resourceId,
+                        data: mergedData,
+                        version: mergedVersion,
+                        updatedBy: client.user.name,
+                    });
+                    break;
+                default:
+                    throw new Error(`Estratégia de conflito não suportada: ${conflictStrategy}`);
+            }
             client.emit('conflict-resolved', {
+                ...resolution,
+                serverVersion: this.getStateVersion(resourceType, resourceId),
+                timestamp: new Date().toISOString(),
+            });
+            this.logger.log(`Conflito ${conflictId} resolvido com estratégia: ${resolution.strategy}`);
+        }
+        catch (error) {
+            this.logger.error(`Erro ao resolver conflito ${conflictId}:`, error);
+            client.emit('conflict-resolution-failed', {
+                conflictId,
+                error: error.message,
                 resourceType,
                 resourceId,
-                resolution: 'server-wins',
-                data: latestData,
-                version: serverVersion,
             });
         }
-        else {
-            client.emit('conflict-resolved', {
-                resourceType,
-                resourceId,
-                resolution: 'client-wins',
-                message: 'Envie seus dados mais recentes',
+    }
+    async handleVersionCheck(client, data) {
+        if (!client.user) {
+            client.emit('error', { message: 'Usuário não autenticado' });
+            return;
+        }
+        const { resourceType, resourceId, clientVersion } = data;
+        const serverVersion = this.getStateVersion(resourceType, resourceId);
+        const hasConflict = this.hasVersionConflict(resourceType, resourceId, clientVersion);
+        client.emit('version-check-result', {
+            resourceType,
+            resourceId,
+            clientVersion,
+            serverVersion,
+            hasConflict,
+            timestamp: new Date().toISOString(),
+        });
+        if (hasConflict) {
+            this.logger.log(`Conflito de versão detectado para ${resourceType}:${resourceId} - Cliente: v${clientVersion}, Servidor: v${serverVersion}`);
+        }
+    }
+    async handleFullSyncRequest(client, data) {
+        if (!client.user) {
+            client.emit('error', { message: 'Usuário não autenticado' });
+            return;
+        }
+        const { lastSyncVersion = 0, resources = [] } = data;
+        this.logger.log(`Sincronização completa solicitada pelo cliente ${client.id} - Última versão: ${lastSyncVersion}`);
+        try {
+            const syncData = await this.getFullSyncData(client.user, lastSyncVersion, resources);
+            const session = this.userSessions.get(client.user.id);
+            if (session) {
+                session.lastSyncVersion = Date.now();
+            }
+            client.emit('full-sync-data', {
+                ...syncData,
+                syncVersion: Date.now(),
+                timestamp: new Date().toISOString(),
             });
+            this.logger.log(`Sincronização completa enviada para cliente ${client.id}`);
+        }
+        catch (error) {
+            this.logger.error(`Erro na sincronização completa para cliente ${client.id}:`, error);
+            client.emit('sync-error', {
+                message: 'Erro na sincronização completa',
+                error: error.message,
+            });
+        }
+    }
+    async handleMessageAcknowledgment(client, data) {
+        const { messageId, status, error } = data;
+        this.logger.debug(`ACK recebido do cliente ${client.id} para mensagem ${messageId}: ${status}`);
+        if (status === 'error') {
+            this.logger.error(`Erro no processamento da mensagem ${messageId} pelo cliente ${client.id}: ${error}`);
+        }
+    }
+    async handleConnectivityStatus(client, data) {
+        if (!client.user)
+            return;
+        const { status, latency, reconnectAttempts } = data;
+        this.logger.debug(`Status de conectividade do cliente ${client.id}: ${status} (latência: ${latency}ms, tentativas: ${reconnectAttempts})`);
+        if (status === 'poor' || (latency && latency > 1000)) {
+            client.emit('adjust-update-frequency', {
+                heartbeatInterval: this.HEARTBEAT_INTERVAL * 2,
+                batchUpdates: true,
+                reducedData: true,
+            });
+        }
+        const session = this.userSessions.get(client.user.id);
+        if (session) {
+            session.connectivityStatus = status;
+            session.latency = latency;
+            session.reconnectAttempts = reconnectAttempts;
         }
     }
     async getLatestResourceData(resourceType, resourceId) {
         switch (resourceType) {
             case 'order':
-                return { id: resourceId, status: 'updated', timestamp: new Date() };
+                return {
+                    id: resourceId,
+                    status: 'updated',
+                    timestamp: new Date(),
+                    version: this.getStateVersion(resourceType, resourceId),
+                };
             case 'table':
-                return { id: resourceId, status: 'available', timestamp: new Date() };
+                return {
+                    id: resourceId,
+                    status: 'available',
+                    timestamp: new Date(),
+                    version: this.getStateVersion(resourceType, resourceId),
+                };
+            case 'order-item':
+                return {
+                    id: resourceId,
+                    status: 'ready',
+                    timestamp: new Date(),
+                    version: this.getStateVersion(resourceType, resourceId),
+                };
             default:
                 return null;
         }
     }
+    async applyClientData(resourceType, resourceId, data, userId) {
+        this.logger.log(`Aplicando dados do cliente para ${resourceType}:${resourceId} por usuário ${userId}`);
+        switch (resourceType) {
+            case 'order':
+                break;
+            case 'table':
+                break;
+            case 'order-item':
+                break;
+            default:
+                throw new Error(`Tipo de recurso não suportado: ${resourceType}`);
+        }
+    }
+    async mergeConflictingData(serverData, clientData, resourceType) {
+        this.logger.log(`Mesclando dados conflitantes para tipo: ${resourceType}`);
+        switch (resourceType) {
+            case 'order':
+                return this.mergeOrderData(serverData, clientData);
+            case 'table':
+                return this.mergeTableData(serverData, clientData);
+            case 'order-item':
+                return this.mergeOrderItemData(serverData, clientData);
+            default:
+                return {
+                    ...serverData,
+                    ...clientData,
+                    mergedAt: new Date().toISOString(),
+                    mergeStrategy: 'client-priority',
+                };
+        }
+    }
+    mergeOrderData(serverData, clientData) {
+        return {
+            ...serverData,
+            status: this.getMostAdvancedOrderStatus(serverData.status, clientData.status),
+            totalAmount: Math.max(serverData.totalAmount || 0, clientData.totalAmount || 0),
+            items: this.mergeOrderItems(serverData.items || [], clientData.items || []),
+            mergedAt: new Date().toISOString(),
+            mergeStrategy: 'order-specific',
+        };
+    }
+    mergeTableData(serverData, clientData) {
+        return {
+            ...serverData,
+            status: serverData.status,
+            capacity: serverData.capacity,
+            updatedAt: new Date(Math.max(new Date(serverData.updatedAt || 0).getTime(), new Date(clientData.updatedAt || 0).getTime())).toISOString(),
+            mergedAt: new Date().toISOString(),
+            mergeStrategy: 'server-priority',
+        };
+    }
+    mergeOrderItemData(serverData, clientData) {
+        return {
+            ...serverData,
+            status: this.getMostAdvancedOrderItemStatus(serverData.status, clientData.status),
+            specialInstructions: clientData.specialInstructions || serverData.specialInstructions,
+            updatedAt: new Date(Math.max(new Date(serverData.updatedAt || 0).getTime(), new Date(clientData.updatedAt || 0).getTime())).toISOString(),
+            mergedAt: new Date().toISOString(),
+            mergeStrategy: 'status-priority',
+        };
+    }
+    getMostAdvancedOrderStatus(status1, status2) {
+        const statusOrder = ['open', 'closed', 'cancelled'];
+        const index1 = statusOrder.indexOf(status1);
+        const index2 = statusOrder.indexOf(status2);
+        return index1 > index2 ? status1 : status2;
+    }
+    getMostAdvancedOrderItemStatus(status1, status2) {
+        const statusOrder = ['pending', 'in_preparation', 'ready', 'delivered', 'cancelled'];
+        const index1 = statusOrder.indexOf(status1);
+        const index2 = statusOrder.indexOf(status2);
+        return index1 > index2 ? status1 : status2;
+    }
+    mergeOrderItems(serverItems, clientItems) {
+        const itemsMap = new Map();
+        serverItems.forEach(item => {
+            itemsMap.set(item.id, item);
+        });
+        clientItems.forEach(clientItem => {
+            const serverItem = itemsMap.get(clientItem.id);
+            if (serverItem) {
+                itemsMap.set(clientItem.id, this.mergeOrderItemData(serverItem, clientItem));
+            }
+            else {
+                itemsMap.set(clientItem.id, clientItem);
+            }
+        });
+        return Array.from(itemsMap.values());
+    }
+    async getFullSyncData(user, lastSyncVersion, resources) {
+        const syncData = {
+            timestamp: new Date().toISOString(),
+            serverTime: Date.now(),
+            syncVersion: Date.now(),
+            resources: {},
+        };
+        if (resources.length === 0) {
+            switch (user.role) {
+                case user_role_enum_1.UserRole.KITCHEN:
+                    resources = ['orders', 'order-items'];
+                    break;
+                case user_role_enum_1.UserRole.WAITER:
+                    resources = ['orders', 'tables', 'order-items'];
+                    break;
+                case user_role_enum_1.UserRole.ADMIN:
+                    resources = ['orders', 'tables', 'order-items', 'menu-items', 'users'];
+                    break;
+            }
+        }
+        for (const resource of resources) {
+            try {
+                syncData.resources[resource] = await this.getResourceDataForSync(resource, user, lastSyncVersion);
+            }
+            catch (error) {
+                this.logger.error(`Erro ao obter dados de sincronização para ${resource}:`, error);
+                syncData.resources[resource] = { error: error.message };
+            }
+        }
+        return syncData;
+    }
+    async getResourceDataForSync(resource, user, lastSyncVersion) {
+        switch (resource) {
+            case 'orders':
+                return {
+                    data: await this.getActiveOrdersForWaiter(),
+                    version: Date.now(),
+                    lastModified: new Date().toISOString(),
+                };
+            case 'tables':
+                return {
+                    data: await this.getTableStatuses(),
+                    version: Date.now(),
+                    lastModified: new Date().toISOString(),
+                };
+            case 'order-items':
+                return {
+                    data: await this.getPendingOrdersForKitchen(),
+                    version: Date.now(),
+                    lastModified: new Date().toISOString(),
+                };
+            default:
+                return {
+                    data: [],
+                    version: Date.now(),
+                    lastModified: new Date().toISOString(),
+                };
+        }
+    }
     broadcastStateChange(changeType, data) {
         this.logger.log(`Broadcasting state change: ${changeType}`);
-        this.server.emit('state-change', {
+        const changeData = {
             type: changeType,
             data,
             timestamp: new Date().toISOString(),
             version: Date.now(),
+            messageId: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        };
+        this.server.emit('state-change', changeData);
+        this.queueChangeForOfflineUsers(changeType, changeData);
+    }
+    queueChangeForOfflineUsers(changeType, changeData) {
+        const relevantRoles = this.getRelevantRolesForChange(changeType);
+        this.userSessions.forEach((session, userId) => {
+            if (!session.isOnline) {
+                const client = this.connectedClients.get(session.socketId);
+                if (client?.user && relevantRoles.includes(client.user.role)) {
+                    const priority = this.getMessagePriority(changeType);
+                    this.queueMessageForUser(userId, 'state-change', changeData, priority);
+                }
+            }
         });
+    }
+    getRelevantRolesForChange(changeType) {
+        const roleMap = {
+            'order-created': [user_role_enum_1.UserRole.KITCHEN, user_role_enum_1.UserRole.ADMIN],
+            'order-updated': [user_role_enum_1.UserRole.WAITER, user_role_enum_1.UserRole.ADMIN],
+            'order-item-status-updated': [user_role_enum_1.UserRole.WAITER, user_role_enum_1.UserRole.ADMIN],
+            'table-status-updated': [user_role_enum_1.UserRole.WAITER, user_role_enum_1.UserRole.ADMIN],
+            'menu-item-updated': [user_role_enum_1.UserRole.WAITER, user_role_enum_1.UserRole.ADMIN],
+            'user-connected': [user_role_enum_1.UserRole.ADMIN],
+            'user-disconnected': [user_role_enum_1.UserRole.ADMIN],
+        };
+        return roleMap[changeType] || [user_role_enum_1.UserRole.ADMIN];
+    }
+    getMessagePriority(changeType) {
+        const priorityMap = {
+            'order-created': 'high',
+            'order-item-status-updated': 'high',
+            'table-status-updated': 'medium',
+            'order-updated': 'medium',
+            'menu-item-updated': 'low',
+            'user-connected': 'low',
+            'user-disconnected': 'low',
+        };
+        return priorityMap[changeType] || 'medium';
+    }
+    broadcastWithAck(changeType, data, targetRoles) {
+        const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const changeData = {
+            type: changeType,
+            data,
+            timestamp: new Date().toISOString(),
+            version: Date.now(),
+            messageId,
+            requiresAck: true,
+        };
+        this.logger.log(`Broadcasting with ACK: ${changeType} (${messageId})`);
+        if (targetRoles) {
+            targetRoles.forEach(role => {
+                const roomName = this.getRoomNameForRole(role);
+                this.server.to(roomName).emit('state-change', changeData);
+            });
+        }
+        else {
+            this.server.emit('state-change', changeData);
+        }
+        setTimeout(() => {
+            this.handleMissingAck(messageId, changeType);
+        }, 10000);
+    }
+    getRoomNameForRole(role) {
+        const roleRoomMap = {
+            [user_role_enum_1.UserRole.ADMIN]: 'admins',
+            [user_role_enum_1.UserRole.WAITER]: 'waiters',
+            [user_role_enum_1.UserRole.KITCHEN]: 'kitchen',
+        };
+        return roleRoomMap[role];
+    }
+    handleMissingAck(messageId, changeType) {
+        this.logger.warn(`ACK não recebido para mensagem ${messageId} (${changeType})`);
     }
     getConnectionStats() {
         const stats = {
@@ -404,12 +912,160 @@ let OrdersGateway = OrdersGateway_1 = class OrdersGateway {
             }
         });
         expiredSessions.forEach(userId => {
-            this.userSessions.delete(userId);
-            this.logger.log(`Sessão expirada removida para usuário ${userId}`);
+            this.cleanupUserSession(userId);
         });
         if (expiredSessions.length > 0) {
             this.logger.log(`Limpeza concluída: ${expiredSessions.length} sessões removidas`);
         }
+    }
+    setupServerEvents() {
+        this.server.on('connection', (socket) => {
+            socket.on('ping', () => {
+                socket.lastHeartbeat = new Date();
+                socket.emit('pong', { timestamp: Date.now() });
+            });
+            socket.on('disconnect', (reason) => {
+                this.logger.log(`Cliente ${socket.id} desconectado: ${reason}`);
+                if (reason === 'transport close' || reason === 'transport error') {
+                    this.handleUnexpectedDisconnect(socket);
+                }
+            });
+        });
+    }
+    generateConnectionId() {
+        return `conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+    async processPendingMessages(userId, client) {
+        const session = this.userSessions.get(userId);
+        if (!session || session.pendingMessages.length === 0) {
+            return;
+        }
+        this.logger.log(`Processando ${session.pendingMessages.length} mensagens pendentes para usuário ${userId}`);
+        const sortedMessages = session.pendingMessages.sort((a, b) => {
+            const priorityOrder = { high: 3, medium: 2, low: 1 };
+            const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority];
+            if (priorityDiff !== 0)
+                return priorityDiff;
+            return a.timestamp.getTime() - b.timestamp.getTime();
+        });
+        const batchSize = 10;
+        for (let i = 0; i < sortedMessages.length; i += batchSize) {
+            const batch = sortedMessages.slice(i, i + batchSize);
+            for (const message of batch) {
+                try {
+                    client.emit(message.event, {
+                        ...message.data,
+                        _isPendingMessage: true,
+                        _messageId: message.id,
+                        _originalTimestamp: message.timestamp,
+                    });
+                    this.logger.debug(`Mensagem pendente enviada: ${message.id}`);
+                }
+                catch (error) {
+                    this.logger.error(`Erro ao enviar mensagem pendente ${message.id}:`, error);
+                    message.retryCount++;
+                    if (message.retryCount < message.maxRetries) {
+                        continue;
+                    }
+                }
+            }
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        session.pendingMessages = [];
+        this.logger.log(`Mensagens pendentes processadas para usuário ${userId}`);
+    }
+    queueMessageForUser(userId, event, data, priority = 'medium') {
+        const session = this.userSessions.get(userId);
+        if (!session || session.isOnline) {
+            return;
+        }
+        const message = {
+            id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            event,
+            data,
+            timestamp: new Date(),
+            priority,
+            retryCount: 0,
+            maxRetries: 3,
+        };
+        session.pendingMessages.push(message);
+        if (session.pendingMessages.length > this.MAX_PENDING_MESSAGES) {
+            session.pendingMessages = session.pendingMessages
+                .filter(msg => msg.priority !== 'low')
+                .slice(-this.MAX_PENDING_MESSAGES);
+        }
+        this.logger.debug(`Mensagem enfileirada para usuário offline ${userId}: ${event}`);
+    }
+    performHeartbeatCheck() {
+        const now = new Date();
+        const disconnectedClients = [];
+        this.connectedClients.forEach((client, socketId) => {
+            if (!client.lastHeartbeat) {
+                client.lastHeartbeat = now;
+                return;
+            }
+            const timeSinceHeartbeat = now.getTime() - client.lastHeartbeat.getTime();
+            if (timeSinceHeartbeat > this.HEARTBEAT_INTERVAL * 2) {
+                this.logger.warn(`Cliente ${socketId} não respondeu ao heartbeat há ${timeSinceHeartbeat}ms`);
+                disconnectedClients.push(socketId);
+            }
+            else if (timeSinceHeartbeat > this.HEARTBEAT_INTERVAL) {
+                client.emit('ping', { timestamp: Date.now() });
+            }
+        });
+        disconnectedClients.forEach(socketId => {
+            const client = this.connectedClients.get(socketId);
+            if (client) {
+                this.logger.log(`Desconectando cliente inativo: ${socketId}`);
+                client.disconnect(true);
+            }
+        });
+    }
+    handleUnexpectedDisconnect(socket) {
+        if (!socket.user)
+            return;
+        const session = this.userSessions.get(socket.user.id);
+        if (session) {
+            session.isOnline = false;
+            this.logger.log(`Desconexão inesperada detectada para usuário ${socket.user.name}`);
+            if (socket.user.role === user_role_enum_1.UserRole.WAITER) {
+                this.server.to('admins').emit('waiter-disconnected', {
+                    userId: socket.user.id,
+                    userName: socket.user.name,
+                    timestamp: new Date().toISOString(),
+                });
+            }
+        }
+    }
+    cleanupUserSession(userId) {
+        const session = this.userSessions.get(userId);
+        if (session) {
+            session.pendingMessages = [];
+            this.messageQueue.delete(userId);
+            this.userSessions.delete(userId);
+            this.logger.log(`Sessão completamente limpa para usuário ${userId}`);
+        }
+    }
+    updateStateVersion(resourceType, resourceId, modifiedBy) {
+        const key = `${resourceType}:${resourceId}`;
+        const version = Date.now();
+        this.stateVersions.set(key, {
+            resourceType,
+            resourceId,
+            version,
+            lastModified: new Date(),
+            modifiedBy,
+        });
+        return version;
+    }
+    getStateVersion(resourceType, resourceId) {
+        const key = `${resourceType}:${resourceId}`;
+        const stateVersion = this.stateVersions.get(key);
+        return stateVersion ? stateVersion.version : 0;
+    }
+    hasVersionConflict(resourceType, resourceId, clientVersion) {
+        const serverVersion = this.getStateVersion(resourceType, resourceId);
+        return serverVersion > clientVersion;
     }
 };
 exports.OrdersGateway = OrdersGateway;
@@ -434,6 +1090,28 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], OrdersGateway.prototype, "handleLeaveRoom", null);
 __decorate([
+    (0, websockets_1.SubscribeMessage)('request-tables-overview'),
+    __param(0, (0, websockets_1.ConnectedSocket)()),
+    __param(1, (0, websockets_1.MessageBody)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], OrdersGateway.prototype, "handleTablesOverviewRequest", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('join-tables-overview'),
+    __param(0, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], OrdersGateway.prototype, "handleJoinTablesOverview", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('leave-tables-overview'),
+    __param(0, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], OrdersGateway.prototype, "handleLeaveTablesOverview", null);
+__decorate([
     (0, websockets_1.SubscribeMessage)('request-sync'),
     __param(0, (0, websockets_1.ConnectedSocket)()),
     __metadata("design:type", Function),
@@ -448,6 +1126,38 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], OrdersGateway.prototype, "handleConflictResolution", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('check-version'),
+    __param(0, (0, websockets_1.ConnectedSocket)()),
+    __param(1, (0, websockets_1.MessageBody)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], OrdersGateway.prototype, "handleVersionCheck", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('request-full-sync'),
+    __param(0, (0, websockets_1.ConnectedSocket)()),
+    __param(1, (0, websockets_1.MessageBody)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], OrdersGateway.prototype, "handleFullSyncRequest", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('message-ack'),
+    __param(0, (0, websockets_1.ConnectedSocket)()),
+    __param(1, (0, websockets_1.MessageBody)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], OrdersGateway.prototype, "handleMessageAcknowledgment", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('connectivity-status'),
+    __param(0, (0, websockets_1.ConnectedSocket)()),
+    __param(1, (0, websockets_1.MessageBody)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], OrdersGateway.prototype, "handleConnectivityStatus", null);
 exports.OrdersGateway = OrdersGateway = OrdersGateway_1 = __decorate([
     (0, common_1.Injectable)(),
     (0, websockets_1.WebSocketGateway)({

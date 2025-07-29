@@ -16,6 +16,7 @@ exports.AuthController = void 0;
 const common_1 = require("@nestjs/common");
 const auth_service_1 = require("./auth.service");
 const login_dto_1 = require("./dto/login.dto");
+const register_dto_1 = require("./dto/register.dto");
 const refresh_token_dto_1 = require("./dto/refresh-token.dto");
 const public_decorator_1 = require("./decorators/public.decorator");
 const roles_decorator_1 = require("./decorators/roles.decorator");
@@ -33,6 +34,13 @@ let AuthController = class AuthController {
             throw new common_1.UnauthorizedException('Credenciais inválidas');
         }
         return this.authService.login(user);
+    }
+    async register(registerDto) {
+        return this.authService.register(registerDto);
+    }
+    async logout(user) {
+        await this.authService.logout(user.id);
+        return { message: 'Logout realizado com sucesso' };
     }
     async refresh(refreshDto) {
         return this.authService.refreshTokens(refreshDto.refreshToken);
@@ -77,6 +85,23 @@ __decorate([
     __metadata("design:paramtypes", [login_dto_1.LoginDto]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "login", null);
+__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, common_1.Post)('register'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [register_dto_1.RegisterDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "register", null);
+__decorate([
+    (0, common_1.Post)('logout'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [user_entity_1.User]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "logout", null);
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Post)('refresh'),

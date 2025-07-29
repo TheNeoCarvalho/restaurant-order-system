@@ -126,6 +126,22 @@ export class OrderItemsService {
     // Notificar sobre mudança de status do item
     this.ordersGateway.notifyOrderItemStatusUpdate(updatedOrderItem);
 
+    // Notificar sobre atualização do painel geral de mesas
+    if (updatedOrderItem.order?.table) {
+      this.ordersGateway.notifyTableOrderUpdate(updatedOrderItem.order.table.id, {
+        orderId: updatedOrderItem.order.id,
+        totalAmount: updatedOrderItem.order.totalAmount,
+        itemsCount: updatedOrderItem.order.items?.length || 0,
+        waiterName: updatedOrderItem.order.waiter?.name,
+        status: updatedOrderItem.order.status,
+        itemStatusUpdate: {
+          itemId: updatedOrderItem.id,
+          newStatus: status,
+          menuItemName: updatedOrderItem.menuItem?.name,
+        },
+      });
+    }
+
     return updatedOrderItem;
   }
 

@@ -51,6 +51,13 @@ let AuthService = class AuthService {
             },
         };
     }
+    async register(userData) {
+        const user = await this.usersService.create(userData);
+        return this.login(user);
+    }
+    async logout(userId) {
+        await this.usersService.deactivate(userId);
+    }
     async generateTokens(payload) {
         const accessTokenSecret = this.configService.get('JWT_SECRET') || 'your-secret-key';
         const refreshTokenSecret = this.configService.get('JWT_REFRESH_SECRET') || 'your-refresh-secret-key';

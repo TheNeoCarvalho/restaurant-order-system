@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Mesas - Exemplo de Integração WebSocket</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .tables-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .table-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 4px solid #3498db;
+        }
+        .table-card.occupied {
+            border-left-color: #e74c3c;
+        }
+        .table-card.available {
+            border-left-color: #27ae60;
+        }
+        .table-card.reserved {
+            border-left-color: #f39c12;
+        }
+        .table-card.cleaning {
+            border-left-color: #9b59b6;
+        }
+        .table-card.priority-high {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            50% { box-shadow: 0 4px 8px rgba(231, 76, 60, 0.3); }
+            100% { box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        }
+        .table-number {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .table-status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .table-status.available { background: #27ae60; color: white; }
+        .table-status.occupied { background: #e74c3c; color: white; }
+        .table-status.reserved { background: #f39c12; color: white; }
+        .table-status.cleaning { background: #9b59b6; color: white; }
+        .order-info {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+        .pending-items {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        .controls {
+            margin: 20px 0;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🍽️ Painel de Mesas - Tempo Real</h1>
+            <p>Exemplo de integração com WebSocket para atualizações em tempo real</p>
+        </div>
+
+        <div id="connectionStatus" class="status disconnected">
+            ❌ Desconectado
+        </div>
+
+        <div class="controls">
+            <h3>Controles</h3>
+            <button id="connectBtn" onclick="connect()">Conectar</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Desconectar</button>
+            <button id="refreshBtn" onclick="refreshTables()">Atualizar Mesas</button>
+            <button id="clearLogBtn" onclick="clearLog()">Limpar Log</button>
+        </div>
+
+        <div id="tablesContainer" class="tables-grid">
+            <!-- As mesas serão carregadas aqui -->
+        </div>
+
+        <div class="log" id="eventLog">
+            <div>📋 Log de eventos WebSocket:</div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        let socket = null;
+        let isConnected = false;
+        let tables = [];
+
+        // Configuração da conexão
+        const SERVER_URL = 'http://localhost:3000'; // Ajuste conforme necessário
+        const JWT_TOKEN = 'your-jwt-token-here'; // Substitua pelo token real
+
+        function log(message) {
+            const logElement = document.getElementById('eventLog');
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function updateConnectionStatus(connected) {
+            isConnected = connected;
+            const statusElement = document.getElementById('connectionStatus');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+
+            if (connected) {
+                statusElement.className = 'status connected';
+                statusElement.innerHTML = '✅ Conectado';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            } else {
+                statusElement.className = 'status disconnected';
+                statusElement.innerHTML = '❌ Desconectado';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+
+        function connect() {
+            if (socket) {
+                socket.disconnect();
+            }
+
+            log('🔄 Tentando conectar...');
+
+            socket = io(`${SERVER_URL}/orders`, {
+                auth: {
+                    token: JWT_TOKEN
+                },
+                transports: ['websocket', 'polling']
+            });
+
+            // Eventos de conexão
+            socket.on('connect', () => {
+                log('✅ Conectado ao servidor');
+                updateConnectionStatus(true);
+                
+                // Entrar na room geral para receber atualizações
+                socket.emit('join-room', { room: 'general' });
+            });
+
+            socket.on('disconnect', (reason) => {
+                log(`❌ Desconectado: ${reason}`);
+                updateConnectionStatus(false);
+            });
+
+            socket.on('connect_error', (error) => {
+                log(`❌ Erro de conexão: ${error.message}`);
+                updateConnectionStatus(false);
+            });
+
+            // Eventos específicos do painel de mesas
+            socket.on('tables-overview-update', (data) => {
+                log('🔄 Atualização do painel de mesas recebida');
+                refreshTables();
+            });
+
+            socket.on('table-status-updated', (data) => {
+                log(`🏠 Mesa ${data.tableNumber} mudou status para: ${data.status}`);
+                updateTableInGrid(data);
+            });
+
+            socket.on('table-order-updated', (data) => {
+                log(`📋 Pedido da mesa ${data.tableId} atualizado`);
+                updateTableOrderInfo(data);
+            });
+
+            socket.on('order-created', (data) => {
+                log(`🆕 Nova comanda criada para mesa ${data.tableNumber}`);
+                refreshTables();
+            });
+
+            socket.on('order-closed', (data) => {
+                log(`✅ Comanda da mesa ${data.tableNumber} fechada`);
+                refreshTables();
+            });
+
+            socket.on('order-item-status-updated', (data) => {
+                log(`🍽️ Item ${data.menuItemName} mudou para: ${data.status}`);
+                // Atualizar apenas se necessário
+                refreshTables();
+            });
+
+            // Eventos de sincronização
+            socket.on('connected', (data) => {
+                log(`🎉 Conectado como: ${data.user.name} (${data.user.role})`);
+                if (data.isReconnection) {
+                    log('🔄 Reconexão detectada, sincronizando dados...');
+                }
+                refreshTables();
+            });
+
+            socket.on('joined-room', (data) => {
+                log(`🏠 Entrou na room: ${data.room}`);
+            });
+
+            socket.on('error', (data) => {
+                log(`❌ Erro: ${data.message}`);
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            updateConnectionStatus(false);
+            log('👋 Desconectado manualmente');
+        }
+
+        async function refreshTables() {
+            try {
+                log('🔄 Buscando dados das mesas...');
+                
+                // Fazer requisição para o endpoint de overview
+                const response = await fetch(`${SERVER_URL}/tables/overview`, {
+                    headers: {
+                        'Authorization': `Bearer ${JWT_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                tables = await response.json();
+                renderTables();
+                log(`✅ ${tables.length} mesas carregadas`);
+
+            } catch (error) {
+                log(`❌ Erro ao carregar mesas: ${error.message}`);
+            }
+        }
+
+        function renderTables() {
+            const container = document.getElementById('tablesContainer');
+            
+            if (tables.length === 0) {
+                container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #7f8c8d;">Nenhuma mesa encontrada</div>';
+                return;
+            }
+
+            container.innerHTML = tables.map(table => `
+                <div class="table-card ${table.status} ${table.priority === 'high' ? 'priority-high' : ''}" data-table-id="${table.id}">
+                    <div class="table-number">Mesa ${table.number}</div>
+                    <div class="table-status ${table.status}">${getStatusText(table.status)}</div>
+                    <div style="margin-top: 10px;">
+                        <small>Capacidade: ${table.capacity} pessoas</small>
+                    </div>
+                    
+                    ${table.activeOrderId ? `
+                        <div class="order-info">
+                            <strong>📋 Comanda Ativa</strong><br>
+                            <small>Garçom: ${table.waiterName || 'N/A'}</small><br>
+                            <small>Total: R$ ${(table.orderTotal || 0).toFixed(2)}</small><br>
+                            <small>Duração: ${table.orderDurationMinutes || 0} min</small>
+                            
+                            ${table.hasPendingOrders ? `
+                                <div class="pending-items">
+                                    <strong>⏳ Itens Pendentes:</strong><br>
+                                    Pendentes: ${table.pendingItems || 0}<br>
+                                    Em preparo: ${table.itemsInPreparation || 0}<br>
+                                    Prontos: ${table.readyItems || 0}
+                                </div>
+                            ` : ''}
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        }
+
+        function getStatusText(status) {
+            const statusMap = {
+                'available': 'Disponível',
+                'occupied': 'Ocupada',
+                'reserved': 'Reservada',
+                'cleaning': 'Limpeza'
+            };
+            return statusMap[status] || status;
+        }
+
+        function updateTableInGrid(tableData) {
+            const tableCard = document.querySelector(`[data-table-id="${tableData.tableId}"]`);
+            if (tableCard) {
+                // Atualizar classe de status
+                tableCard.className = `table-card ${tableData.status}`;
+                
+                // Atualizar status text
+                const statusElement = tableCard.querySelector('.table-status');
+                if (statusElement) {
+                    statusElement.className = `table-status ${tableData.status}`;
+                    statusElement.textContent = getStatusText(tableData.status);
+                }
+            }
+        }
+
+        function updateTableOrderInfo(orderData) {
+            // Para simplificar, vamos apenas atualizar tudo
+            // Em uma implementação real, você poderia atualizar apenas os dados específicos
+            refreshTables();
+        }
+
+        function clearLog() {
+            document.getElementById('eventLog').innerHTML = '<div>📋 Log de eventos WebSocket:</div>';
+        }
+
+        // Conectar automaticamente ao carregar a página
+        window.addEventListener('load', () => {
+            log('🚀 Página carregada, pronto para conectar');
+            log('⚠️ Lembre-se de configurar o JWT_TOKEN válido no código');
+        });
+
+        // Reconectar automaticamente se a conexão for perdida
+        setInterval(() => {
+            if (!isConnected && socket) {
+                log('🔄 Tentando reconectar...');
+                connect();
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

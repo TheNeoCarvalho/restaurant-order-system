@@ -48,6 +48,7 @@ export class OrdersController {
    * Todos os usuários autenticados podem ver as comandas
    */
   @Get()
+  @Roles(UserRole.ADMIN)
   async findAll() {
     return this.ordersService.findAll();
   }
@@ -56,6 +57,7 @@ export class OrdersController {
    * Buscar comanda por ID
    */
   @Get(':id')
+  @Roles(UserRole.ADMIN)
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.ordersService.findOne(id);
   }
@@ -64,6 +66,7 @@ export class OrdersController {
    * Buscar comandas por mesa
    */
   @Get('table/:tableId')
+  @Roles(UserRole.ADMIN)
   async findByTable(@Param('tableId', ParseIntPipe) tableId: number) {
     return this.ordersService.findByTable(tableId);
   }
@@ -72,6 +75,7 @@ export class OrdersController {
    * Buscar comanda ativa de uma mesa
    */
   @Get('table/:tableId/active')
+  @Roles(UserRole.ADMIN)
   async findActiveOrderByTable(@Param('tableId', ParseIntPipe) tableId: number) {
     return this.ordersService.findActiveOrderByTable(tableId);
   }

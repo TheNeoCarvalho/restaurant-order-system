@@ -48,6 +48,15 @@ export class AuthService {
     };
   }
 
+  async register(userData: Partial<User>): Promise<AuthResponseDto> {
+    const user = await this.usersService.create(userData);
+    return this.login(user);
+  }
+
+  async logout(userId: string): Promise<void> {
+    await this.usersService.deactivate(userId);
+  }
+
   async generateTokens(payload: JwtPayload): Promise<TokenPair> {
     const accessTokenSecret = this.configService.get<string>('JWT_SECRET') || 'your-secret-key';
     const refreshTokenSecret = this.configService.get<string>('JWT_REFRESH_SECRET') || 'your-refresh-secret-key';

@@ -18,12 +18,17 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const table_entity_1 = require("./entities/table.entity");
 const table_status_enum_1 = require("../common/enums/table-status.enum");
+const order_item_status_enum_1 = require("../common/enums/order-item-status.enum");
+const order_status_enum_1 = require("../common/enums/order-status.enum");
+const order_entity_1 = require("../orders/entities/order.entity");
 const orders_gateway_1 = require("../websocket/orders.gateway");
 let TablesService = class TablesService {
     tableRepository;
+    orderRepository;
     ordersGateway;
-    constructor(tableRepository, ordersGateway) {
+    constructor(tableRepository, orderRepository, ordersGateway) {
         this.tableRepository = tableRepository;
+        this.orderRepository = orderRepository;
         this.ordersGateway = ordersGateway;
     }
     async create(createTableDto) {
@@ -121,13 +126,138 @@ let TablesService = class TablesService {
             cleaning,
         };
     }
+    async getTablesOverview(query = {}) {
+        const { status, hasPendingOrders, sortBy = 'number', sortOrder = 'ASC', includeOrderDetails = false, } = query;
+        let tablesQuery = this.tableRepository
+            .createQueryBuilder('table')
+            .leftJoinAndSelect('table.orders', 'order', 'order.status = :orderStatus', {
+            orderStatus: order_status_enum_1.OrderStatus.OPEN
+        })
+            .leftJoinAndSelect('order.waiter', 'waiter')
+            .leftJoinAndSelect('order.items', 'orderItem')
+            .leftJoinAndSelect('orderItem.menuItem', 'menuItem');
+        if (status) {
+            tablesQuery = tablesQuery.where('table.status = :status', { status });
+        }
+        const tables = await tablesQuery.getMany();
+        let tablesOverview = tables.map(table => this.transformToTableOverview(table, includeOrderDetails));
+        if (hasPendingOrders !== undefined) {
+            tablesOverview = tablesOverview.filter(table => table.hasPendingOrders === hasPendingOrders);
+        }
+        tablesOverview = this.sortTablesOverview(tablesOverview, sortBy, sortOrder);
+        return tablesOverview;
+    }
+    transformToTableOverview(table, includeOrderDetails) {
+        const activeOrder = table.orders?.[0];
+        let pendingItems = 0;
+        let itemsInPreparation = 0;
+        let readyItems = 0;
+        let totalItems = 0;
+        let pendingOrderItems = [];
+        let orderDurationMinutes = 0;
+        if (activeOrder) {
+            totalItems = activeOrder.items?.length || 0;
+            activeOrder.items?.forEach(item => {
+                switch (item.status) {
+                    case order_item_status_enum_1.OrderItemStatus.PENDING:
+                        pendingItems++;
+                        break;
+                    case order_item_status_enum_1.OrderItemStatus.IN_PREPARATION:
+                        itemsInPreparation++;
+                        break;
+                    case order_item_status_enum_1.OrderItemStatus.READY:
+                        readyItems++;
+                        break;
+                }
+            });
+            if (activeOrder.createdAt) {
+                const now = new Date();
+                orderDurationMinutes = Math.floor((now.getTime() - activeOrder.createdAt.getTime()) / (1000 * 60));
+            }
+            if (includeOrderDetails) {
+                pendingOrderItems = activeOrder.items
+                    ?.filter(item => item.status === order_item_status_enum_1.OrderItemStatus.PENDING ||
+                    item.status === order_item_status_enum_1.OrderItemStatus.IN_PREPARATION ||
+                    item.status === order_item_status_enum_1.OrderItemStatus.READY)
+                    .map(item => ({
+                    id: item.id,
+                    menuItemName: item.menuItem?.name || 'Item não encontrado',
+                    quantity: item.quantity,
+                    status: item.status,
+                    specialInstructions: item.specialInstructions,
+                    createdAt: item.createdAt,
+                    estimatedPreparationTime: item.menuItem?.preparationTime,
+                })) || [];
+            }
+        }
+        const hasPendingOrders = pendingItems > 0 || itemsInPreparation > 0 || readyItems > 0;
+        const priority = this.calculateTablePriority(orderDurationMinutes, pendingItems, itemsInPreparation);
+        return {
+            id: table.id,
+            number: table.number,
+            capacity: table.capacity,
+            status: table.status,
+            activeOrderId: activeOrder?.id,
+            waiterName: activeOrder?.waiter?.name,
+            orderTotal: activeOrder?.totalAmount ? Number(activeOrder.totalAmount) : undefined,
+            totalItems: totalItems > 0 ? totalItems : undefined,
+            pendingItems: pendingItems > 0 ? pendingItems : undefined,
+            itemsInPreparation: itemsInPreparation > 0 ? itemsInPreparation : undefined,
+            readyItems: readyItems > 0 ? readyItems : undefined,
+            pendingOrderItems: includeOrderDetails ? pendingOrderItems : undefined,
+            orderOpenedAt: activeOrder?.createdAt,
+            orderDurationMinutes: orderDurationMinutes > 0 ? orderDurationMinutes : undefined,
+            hasPendingOrders,
+            priority,
+        };
+    }
+    calculateTablePriority(orderDurationMinutes, pendingItems, itemsInPreparation) {
+        if (pendingItems === 0 && itemsInPreparation === 0) {
+            return 'low';
+        }
+        if (pendingItems >= 5 || itemsInPreparation >= 3 || orderDurationMinutes >= 60) {
+            return 'high';
+        }
+        if (pendingItems >= 2 || itemsInPreparation >= 1 || orderDurationMinutes >= 30) {
+            return 'medium';
+        }
+        return 'low';
+    }
+    sortTablesOverview(tables, sortBy, sortOrder) {
+        return tables.sort((a, b) => {
+            let comparison = 0;
+            switch (sortBy) {
+                case 'number':
+                    comparison = a.number - b.number;
+                    break;
+                case 'status':
+                    comparison = a.status.localeCompare(b.status);
+                    break;
+                case 'orderDuration':
+                    const aDuration = a.orderDurationMinutes || 0;
+                    const bDuration = b.orderDurationMinutes || 0;
+                    comparison = aDuration - bDuration;
+                    break;
+                case 'pendingItems':
+                    const aPending = a.pendingItems || 0;
+                    const bPending = b.pendingItems || 0;
+                    comparison = aPending - bPending;
+                    break;
+                default:
+                    comparison = a.number - b.number;
+            }
+            return sortOrder === 'DESC' ? -comparison : comparison;
+        });
+    }
 };
 exports.TablesService = TablesService;
 exports.TablesService = TablesService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(table_entity_1.Table)),
-    __param(1, (0, common_1.Inject)((0, common_1.forwardRef)(() => orders_gateway_1.OrdersGateway))),
+    __param(1, (0, typeorm_1.InjectRepository)(order_entity_1.Order)),
+    __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => orders_gateway_1.OrdersGateway))),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
         orders_gateway_1.OrdersGateway])
 ], TablesService);
 //# sourceMappingURL=tables.service.js.map

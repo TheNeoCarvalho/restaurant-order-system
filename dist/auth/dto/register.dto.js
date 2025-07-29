@@ -9,24 +9,38 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LoginDto = void 0;
+exports.RegisterDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
-class LoginDto {
+const user_role_enum_1 = require("../../users/enums/user-role.enum");
+class RegisterDto {
     email;
     password;
+    name;
+    role;
 }
-exports.LoginDto = LoginDto;
+exports.RegisterDto = RegisterDto;
 __decorate([
     (0, class_validator_1.IsEmail)({}, { message: 'Email deve ter um formato válido' }),
     (0, class_validator_1.IsNotEmpty)({ message: 'Email é obrigatório' }),
-    (0, swagger_1.ApiProperty)({ example: 'email@email.com' }),
+    (0, swagger_1.ApiProperty)({ example: 'usuario@email.com' }),
     __metadata("design:type", String)
-], LoginDto.prototype, "email", void 0);
+], RegisterDto.prototype, "email", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '123456' }),
     (0, class_validator_1.IsNotEmpty)({ message: 'Senha é obrigatória' }),
     (0, class_validator_1.MinLength)(6, { message: 'Senha deve ter pelo menos 6 caracteres' }),
+    (0, swagger_1.ApiProperty)({ example: '123456' }),
     __metadata("design:type", String)
-], LoginDto.prototype, "password", void 0);
-//# sourceMappingURL=login.dto.js.map
+], RegisterDto.prototype, "password", void 0);
+__decorate([
+    (0, class_validator_1.IsNotEmpty)({ message: 'Nome é obrigatório' }),
+    (0, swagger_1.ApiProperty)({ example: 'João Silva' }),
+    __metadata("design:type", String)
+], RegisterDto.prototype, "name", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(user_role_enum_1.UserRole, { message: 'Role deve ser admin, waiter ou kitchen' }),
+    (0, swagger_1.ApiProperty)({ enum: user_role_enum_1.UserRole, required: false, default: user_role_enum_1.UserRole.WAITER }),
+    __metadata("design:type", String)
+], RegisterDto.prototype, "role", void 0);
+//# sourceMappingURL=register.dto.js.map

@@ -67,6 +67,13 @@ let OrdersService = class OrdersService {
         if (updatedTable) {
             this.ordersGateway.notifyTableStatusUpdate(updatedTable);
         }
+        this.ordersGateway.notifyTableOrderUpdate(tableId, {
+            orderId: completeOrder.id,
+            totalAmount: completeOrder.totalAmount,
+            itemsCount: completeOrder.items?.length || 0,
+            waiterName: completeOrder.waiter.name,
+            status: completeOrder.status,
+        });
         if (items.length > 0) {
             this.ordersGateway.notifyNewOrder(completeOrder);
         }
@@ -128,6 +135,13 @@ let OrdersService = class OrdersService {
         await this.updateOrderTotal(orderId);
         const updatedOrder = await this.findOne(orderId);
         this.ordersGateway.notifyNewOrder(updatedOrder);
+        this.ordersGateway.notifyTableOrderUpdate(updatedOrder.table.id, {
+            orderId: updatedOrder.id,
+            totalAmount: updatedOrder.totalAmount,
+            itemsCount: updatedOrder.items?.length || 0,
+            waiterName: updatedOrder.waiter.name,
+            status: updatedOrder.status,
+        });
         return updatedOrder;
     }
     async removeItemFromOrder(orderId, itemId) {
@@ -199,6 +213,13 @@ let OrdersService = class OrdersService {
         if (updatedTable) {
             this.ordersGateway.notifyTableStatusUpdate(updatedTable);
         }
+        this.ordersGateway.notifyTableOrderUpdate(order.tableId, {
+            orderId: null,
+            totalAmount: 0,
+            itemsCount: 0,
+            waiterName: null,
+            status: 'closed',
+        });
         return { order: updatedOrder, summary };
     }
     validateNoPendingItems(order) {

@@ -1,11 +1,13 @@
 import { Repository } from 'typeorm';
 import { Table } from './entities/table.entity';
-import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto } from './dto';
+import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto, TableOverviewDto, TablesOverviewQueryDto } from './dto';
+import { Order } from '../orders/entities/order.entity';
 import { OrdersGateway } from '../websocket/orders.gateway';
 export declare class TablesService {
     private readonly tableRepository;
+    private readonly orderRepository;
     private readonly ordersGateway;
-    constructor(tableRepository: Repository<Table>, ordersGateway: OrdersGateway);
+    constructor(tableRepository: Repository<Table>, orderRepository: Repository<Order>, ordersGateway: OrdersGateway);
     create(createTableDto: CreateTableDto): Promise<Table>;
     findAll(): Promise<Table[]>;
     findOne(id: number): Promise<Table>;
@@ -23,4 +25,8 @@ export declare class TablesService {
         reserved: number;
         cleaning: number;
     }>;
+    getTablesOverview(query?: TablesOverviewQueryDto): Promise<TableOverviewDto[]>;
+    private transformToTableOverview;
+    private calculateTablePriority;
+    private sortTablesOverview;
 }
