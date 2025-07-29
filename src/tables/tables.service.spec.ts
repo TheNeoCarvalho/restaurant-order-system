@@ -6,6 +6,7 @@ import { TablesService } from './tables.service';
 import { Table } from './entities/table.entity';
 import { TableStatus } from '../common/enums/table-status.enum';
 import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto } from './dto';
+import { OrdersGateway } from '../websocket/orders.gateway';
 
 describe('TablesService', () => {
   let service: TablesService;
@@ -20,6 +21,13 @@ describe('TablesService', () => {
     count: jest.fn(),
   };
 
+  const mockOrdersGateway = {
+    notifyNewOrder: jest.fn(),
+    notifyOrderItemStatusUpdate: jest.fn(),
+    notifyTableStatusUpdate: jest.fn(),
+    notifyOrderClosed: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -27,6 +35,10 @@ describe('TablesService', () => {
         {
           provide: getRepositoryToken(Table),
           useValue: mockRepository,
+        },
+        {
+          provide: OrdersGateway,
+          useValue: mockOrdersGateway,
         },
       ],
     }).compile();

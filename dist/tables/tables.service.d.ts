@@ -1,9 +1,11 @@
 import { Repository } from 'typeorm';
 import { Table } from './entities/table.entity';
 import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto } from './dto';
+import { OrdersGateway } from '../websocket/orders.gateway';
 export declare class TablesService {
     private readonly tableRepository;
-    constructor(tableRepository: Repository<Table>);
+    private readonly ordersGateway;
+    constructor(tableRepository: Repository<Table>, ordersGateway: OrdersGateway);
     create(createTableDto: CreateTableDto): Promise<Table>;
     findAll(): Promise<Table[]>;
     findOne(id: number): Promise<Table>;

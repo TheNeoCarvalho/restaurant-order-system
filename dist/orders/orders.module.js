@@ -17,6 +17,7 @@ const user_entity_1 = require("../users/entities/user.entity");
 const orders_service_1 = require("./orders.service");
 const orders_controller_1 = require("./orders.controller");
 const order_items_module_1 = require("../order-items/order-items.module");
+const websocket_module_1 = require("../websocket/websocket.module");
 let OrdersModule = class OrdersModule {
 };
 exports.OrdersModule = OrdersModule;
@@ -25,6 +26,7 @@ exports.OrdersModule = OrdersModule = __decorate([
         imports: [
             typeorm_1.TypeOrmModule.forFeature([order_entity_1.Order, order_item_entity_1.OrderItem, table_entity_1.Table, menu_item_entity_1.MenuItem, user_entity_1.User]),
             order_items_module_1.OrderItemsModule,
+            (0, common_1.forwardRef)(() => websocket_module_1.WebsocketModule),
         ],
         controllers: [orders_controller_1.OrdersController],
         providers: [orders_service_1.OrdersService],

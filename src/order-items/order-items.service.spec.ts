@@ -11,6 +11,7 @@ import {
   InvalidStatusTransitionException,
   UnauthorizedStatusUpdateException 
 } from './exceptions';
+import { OrdersGateway } from '../websocket/orders.gateway';
 
 describe('OrderItemsService', () => {
   let service: OrderItemsService;
@@ -29,6 +30,13 @@ describe('OrderItemsService', () => {
     findOne: jest.fn(),
   };
 
+  const mockOrdersGateway = {
+    notifyNewOrder: jest.fn(),
+    notifyOrderItemStatusUpdate: jest.fn(),
+    notifyTableStatusUpdate: jest.fn(),
+    notifyOrderClosed: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -40,6 +48,10 @@ describe('OrderItemsService', () => {
         {
           provide: getRepositoryToken(User),
           useValue: mockUserRepository,
+        },
+        {
+          provide: OrdersGateway,
+          useValue: mockOrdersGateway,
         },
       ],
     }).compile();

@@ -10,6 +10,7 @@ import { OrderStatus } from '../common/enums/order-status.enum';
 import { TableStatus } from '../common/enums/table-status.enum';
 import { OrderItemStatus } from '../common/enums/order-item-status.enum';
 import { TableOccupiedException, OrderNotFoundException } from './exceptions';
+import { OrdersGateway } from '../websocket/orders.gateway';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -43,10 +44,21 @@ describe('OrdersService', () => {
     findOne: jest.fn(),
   };
 
+  const mockOrdersGateway = {
+    notifyNewOrder: jest.fn(),
+    notifyOrderItemStatusUpdate: jest.fn(),
+    notifyTableStatusUpdate: jest.fn(),
+    notifyOrderClosed: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OrdersService,
+        {
+          provide: OrdersGateway,
+          useValue: mockOrdersGateway,
+        },
         {
           provide: getRepositoryToken(Order),
           useValue: mockOrderRepository,

@@ -1,15 +1,18 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Table } from './entities/table.entity';
 import { CreateTableDto, UpdateTableDto, UpdateTableStatusDto } from './dto';
 import { TableStatus } from '../common/enums/table-status.enum';
+import { OrdersGateway } from '../websocket/orders.gateway';
 
 @Injectable()
 export class TablesService {
   constructor(
     @InjectRepository(Table)
     private readonly tableRepository: Repository<Table>,
+    @Inject(forwardRef(() => OrdersGateway))
+    private readonly ordersGateway: OrdersGateway,
   ) {}
 
   async create(createTableDto: CreateTableDto): Promise<Table> {
@@ -81,7 +84,12 @@ export class TablesService {
   async updateStatus(id: number, updateStatusDto: UpdateTableStatusDto): Promise<Table> {
     const table = await this.findOne(id);
     table.status = updateStatusDto.status;
-    return await this.tableRepository.save(table);
+    const updatedTable = await this.tableRepository.save(table);
+    
+    // Notificar sobre mudança de status da mesa
+    this.ordersGateway.notifyTableStatusUpdate(updatedTable);
+    
+    return updatedTable;
   }
 
   async remove(id: number): Promise<void> {

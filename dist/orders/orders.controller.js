@@ -57,8 +57,40 @@ let OrdersController = class OrdersController {
     async updateItemQuantity(id, itemId, quantity) {
         return this.ordersService.updateItemQuantity(id, itemId, quantity);
     }
-    async closeOrder(id) {
-        return this.ordersService.closeOrder(id);
+    async closeOrder(id, req) {
+        const logger = new common_1.Logger('OrdersController');
+        const userRole = req.user.role;
+        const userId = req.user.sub;
+        if (userRole !== user_role_enum_1.UserRole.ADMIN && userRole !== user_role_enum_1.UserRole.WAITER) {
+            logger.warn(`Tentativa de fechamento de comanda por usuário não autorizado: ${userId} (${userRole})`);
+            throw new common_1.ForbiddenException('Usuário não tem permissão para fechar comandas');
+        }
+        try {
+            const result = await this.ordersService.closeOrder(id);
+            const auditInfo = {
+                orderId: id,
+                userId,
+                userRole,
+                tableNumber: result.order.table.number,
+                finalAmount: result.summary.totals.finalTotal,
+                timestamp: new Date().toISOString(),
+            };
+            logger.log(`Comanda fechada com sucesso: ${JSON.stringify(auditInfo)}`);
+            return {
+                message: 'Comanda fechada com sucesso',
+                order: result.order,
+                summary: result.summary,
+                closedBy: {
+                    userId,
+                    role: userRole,
+                    timestamp: auditInfo.timestamp,
+                },
+            };
+        }
+        catch (error) {
+            logger.error(`Erro ao fechar comanda ${id}: ${error.message}`, error.stack);
+            throw error;
+        }
     }
     async cancelOrder(id) {
         return this.ordersService.cancelOrder(id);
@@ -193,9 +225,11 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':id/close'),
     (0, roles_decorator_1.Roles)(user_role_enum_1.UserRole.ADMIN, user_role_enum_1.UserRole.WAITER),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Request)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], OrdersController.prototype, "closeOrder", null);
 __decorate([

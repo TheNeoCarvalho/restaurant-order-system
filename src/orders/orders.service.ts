@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Order } from './entities/order.entity';
@@ -15,6 +15,8 @@ import {
   OrderNotFoundException, 
   MenuItemNotAvailableException 
 } from './exceptions';
+import { OrderTotals, OrderSummary } from './interfaces';
+import { OrdersGateway } from '../websocket/orders.gateway';
 
 @Injectable()
 export class OrdersService {
@@ -27,6 +29,8 @@ export class OrdersService {
     private readonly tableRepository: Repository<Table>,
     @InjectRepository(MenuItem)
     private readonly menuItemRepository: Repository<MenuItem>,
+    @Inject(forwardRef(() => OrdersGateway))
+    private readonly ordersGateway: OrdersGateway,
   ) {}
 
   /**
@@ -69,8 +73,21 @@ export class OrdersService {
       status: TableStatus.OCCUPIED 
     });
 
-    // Retornar a comanda com os itens
-    return this.findOne(savedOrder.id);
+    // Buscar a comanda completa para notificação
+    const completeOrder = await this.findOne(savedOrder.id);
+
+    // Notificar sobre mudança de status da mesa
+    const updatedTable = await this.tableRepository.findOne({ where: { id: tableId } });
+    if (updatedTable) {
+      this.ordersGateway.notifyTableStatusUpdate(updatedTable);
+    }
+
+    // Se há itens, notificar a cozinha sobre a nova comanda
+    if (items.length > 0) {
+      this.ordersGateway.notifyNewOrder(completeOrder);
+    }
+
+    return completeOrder;
   }
 
   /**
@@ -160,7 +177,13 @@ export class OrdersService {
     // Recalcular e atualizar o total da comanda
     await this.updateOrderTotal(orderId);
 
-    return this.findOne(orderId);
+    // Buscar a comanda atualizada para notificação
+    const updatedOrder = await this.findOne(orderId);
+
+    // Notificar sobre novo item adicionado à comanda (para a cozinha)
+    this.ordersGateway.notifyNewOrder(updatedOrder);
+
+    return updatedOrder;
   }
 
   /**
@@ -257,30 +280,28 @@ export class OrdersService {
   }
 
   /**
-   * Fechar comanda (será implementado em tarefa posterior)
+   * Fechar comanda com cálculo de total, impostos e geração de resumo
    */
-  async closeOrder(id: string): Promise<Order> {
+  async closeOrder(id: string): Promise<{ order: Order; summary: OrderSummary }> {
     const order = await this.findOne(id);
     
     if (order.status !== OrderStatus.OPEN) {
       throw new BadRequestException('Comanda já está fechada');
     }
 
-    // Verificar se há itens pendentes
-    const pendingItems = order.items.filter(item => 
-      item.status === OrderItemStatus.PENDING || 
-      item.status === OrderItemStatus.IN_PREPARATION
-    );
+    // Validar se há itens pendentes
+    this.validateNoPendingItems(order);
 
-    if (pendingItems.length > 0) {
-      throw new BadRequestException(
-        'Não é possível fechar a comanda. Existem itens pendentes na cozinha.'
-      );
-    }
+    // Calcular totais com impostos
+    const totals = this.calculateOrderTotals(order);
+
+    // Gerar resumo detalhado
+    const summary = this.generateOrderSummary(order, totals);
 
     // Atualizar status da comanda
     order.status = OrderStatus.CLOSED;
     order.closedAt = new Date();
+    order.totalAmount = totals.finalTotal;
     await this.orderRepository.save(order);
 
     // Liberar a mesa
@@ -288,7 +309,103 @@ export class OrdersService {
       status: TableStatus.AVAILABLE 
     });
 
-    return this.findOne(id);
+    const updatedOrder = await this.findOne(id);
+
+    // Notificar sobre fechamento da comanda
+    this.ordersGateway.notifyOrderClosed(updatedOrder);
+
+    // Notificar sobre mudança de status da mesa
+    const updatedTable = await this.tableRepository.findOne({ where: { id: order.tableId } });
+    if (updatedTable) {
+      this.ordersGateway.notifyTableStatusUpdate(updatedTable);
+    }
+
+    return { order: updatedOrder, summary };
+  }
+
+  /**
+   * Validar se não há itens pendentes na comanda
+   */
+  private validateNoPendingItems(order: Order): void {
+    const pendingItems = order.items.filter(item => 
+      item.status === OrderItemStatus.PENDING || 
+      item.status === OrderItemStatus.IN_PREPARATION
+    );
+
+    if (pendingItems.length > 0) {
+      const pendingItemNames = pendingItems.map(item => item.menuItem.name);
+      throw new BadRequestException(
+        `Não é possível fechar a comanda. Existem ${pendingItems.length} item(ns) pendente(s) na cozinha: ${pendingItemNames.join(', ')}`
+      );
+    }
+  }
+
+  /**
+   * Calcular totais da comanda incluindo impostos e taxas
+   */
+  private calculateOrderTotals(order: Order): OrderTotals {
+    const subtotal = order.items.reduce((total, item) => {
+      return total + item.getSubtotal();
+    }, 0);
+
+    // Configurações de impostos e taxas (podem ser configuráveis)
+    const serviceChargeRate = 0.10; // 10% taxa de serviço
+    const taxRate = 0.08; // 8% de impostos
+
+    const serviceCharge = subtotal * serviceChargeRate;
+    const taxAmount = subtotal * taxRate;
+    const finalTotal = subtotal + serviceCharge + taxAmount;
+
+    return {
+      subtotal: Number(subtotal.toFixed(2)),
+      serviceCharge: Number(serviceCharge.toFixed(2)),
+      taxAmount: Number(taxAmount.toFixed(2)),
+      finalTotal: Number(finalTotal.toFixed(2)),
+      serviceChargeRate,
+      taxRate,
+    };
+  }
+
+  /**
+   * Gerar resumo detalhado da comanda
+   */
+  private generateOrderSummary(order: Order, totals: OrderTotals): OrderSummary {
+    const itemsSummary = order.items.map(item => ({
+      id: item.id,
+      name: item.menuItem.name,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      subtotal: item.getSubtotal(),
+      specialInstructions: item.specialInstructions,
+      status: item.status,
+    }));
+
+    return {
+      orderId: order.id,
+      tableNumber: order.table.number,
+      waiterName: order.waiter.name,
+      openedAt: order.createdAt,
+      closedAt: order.closedAt,
+      items: itemsSummary,
+      totals,
+      totalItems: order.items.length,
+      totalQuantity: order.items.reduce((sum, item) => sum + item.quantity, 0),
+    };
+  }
+
+  /**
+   * Arquivar comanda fechada (para fins de auditoria e histórico)
+   */
+  async archiveOrder(orderId: string): Promise<void> {
+    const order = await this.findOne(orderId);
+    
+    if (order.status !== OrderStatus.CLOSED) {
+      throw new BadRequestException('Apenas comandas fechadas podem ser arquivadas');
+    }
+
+    // Em uma implementação real, isso poderia mover a comanda para uma tabela de arquivo
+    // ou marcar com um flag de arquivado. Por enquanto, apenas log para auditoria.
+    console.log(`Comanda ${orderId} arquivada em ${new Date().toISOString()}`);
   }
 
   /**
@@ -319,7 +436,15 @@ export class OrdersService {
       status: TableStatus.AVAILABLE 
     });
 
-    return this.findOne(id);
+    const updatedOrder = await this.findOne(id);
+
+    // Notificar sobre mudança de status da mesa
+    const updatedTable = await this.tableRepository.findOne({ where: { id: order.tableId } });
+    if (updatedTable) {
+      this.ordersGateway.notifyTableStatusUpdate(updatedTable);
+    }
+
+    return updatedOrder;
   }
 
   /**

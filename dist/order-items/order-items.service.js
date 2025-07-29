@@ -21,12 +21,15 @@ const user_entity_1 = require("../users/entities/user.entity");
 const order_item_status_enum_1 = require("../common/enums/order-item-status.enum");
 const user_role_enum_1 = require("../common/enums/user-role.enum");
 const exceptions_1 = require("./exceptions");
+const orders_gateway_1 = require("../websocket/orders.gateway");
 let OrderItemsService = class OrderItemsService {
     orderItemRepository;
     userRepository;
-    constructor(orderItemRepository, userRepository) {
+    ordersGateway;
+    constructor(orderItemRepository, userRepository, ordersGateway) {
         this.orderItemRepository = orderItemRepository;
         this.userRepository = userRepository;
+        this.ordersGateway = ordersGateway;
     }
     async findAll() {
         return this.orderItemRepository.find({
@@ -84,7 +87,9 @@ let OrderItemsService = class OrderItemsService {
         orderItem.status = status;
         orderItem.statusUpdatedById = updatedBy;
         await this.orderItemRepository.save(orderItem);
-        return this.findOne(id);
+        const updatedOrderItem = await this.findOne(id);
+        this.ordersGateway.notifyOrderItemStatusUpdate(updatedOrderItem);
+        return updatedOrderItem;
     }
     async markAsInPreparation(id, userId) {
         return this.updateStatus(id, {
@@ -207,7 +212,9 @@ exports.OrderItemsService = OrderItemsService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(order_item_entity_1.OrderItem)),
     __param(1, (0, typeorm_1.InjectRepository)(user_entity_1.User)),
+    __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => orders_gateway_1.OrdersGateway))),
     __metadata("design:paramtypes", [typeorm_2.Repository,
-        typeorm_2.Repository])
+        typeorm_2.Repository,
+        orders_gateway_1.OrdersGateway])
 ], OrderItemsService);
 //# sourceMappingURL=order-items.service.js.map

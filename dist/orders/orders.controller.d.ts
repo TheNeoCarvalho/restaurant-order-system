@@ -1,6 +1,6 @@
 import { OrdersService } from './orders.service';
 import { OrderItemsService } from '../order-items/order-items.service';
-import { CreateOrderDto, AddItemToOrderDto, UpdateOrderDto } from './dto';
+import { CreateOrderDto, AddItemToOrderDto, UpdateOrderDto, CloseOrderResponseDto } from './dto';
 import { UpdateOrderItemStatusDto } from '../order-items/dto';
 import { OrderItemStatus } from '../common/enums/order-item-status.enum';
 export declare class OrdersController {
@@ -16,7 +16,7 @@ export declare class OrdersController {
     addItem(id: string, addItemDto: AddItemToOrderDto): Promise<import("./entities").Order>;
     removeItem(id: string, itemId: string): Promise<import("./entities").Order>;
     updateItemQuantity(id: string, itemId: string, quantity: number): Promise<import("./entities").Order>;
-    closeOrder(id: string): Promise<import("./entities").Order>;
+    closeOrder(id: string, req: any): Promise<CloseOrderResponseDto>;
     cancelOrder(id: string): Promise<import("./entities").Order>;
     remove(id: string): Promise<void>;
     findAllItems(): Promise<import("../order-items").OrderItem[]>;

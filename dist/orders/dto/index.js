@@ -18,4 +18,5 @@ __exportStar(require("./create-order.dto"), exports);
 __exportStar(require("./create-order-item.dto"), exports);
 __exportStar(require("./add-item-to-order.dto"), exports);
 __exportStar(require("./update-order.dto"), exports);
+__exportStar(require("./close-order-response.dto"), exports);
 //# sourceMappingURL=index.js.map

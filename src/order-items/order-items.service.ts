@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OrderItem } from './entities/order-item.entity';
@@ -11,6 +11,7 @@ import {
   InvalidStatusTransitionException,
   UnauthorizedStatusUpdateException 
 } from './exceptions';
+import { OrdersGateway } from '../websocket/orders.gateway';
 
 @Injectable()
 export class OrderItemsService {
@@ -19,6 +20,8 @@ export class OrderItemsService {
     private readonly orderItemRepository: Repository<OrderItem>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @Inject(forwardRef(() => OrdersGateway))
+    private readonly ordersGateway: OrdersGateway,
   ) {}
 
   /**
@@ -118,7 +121,12 @@ export class OrderItemsService {
 
     await this.orderItemRepository.save(orderItem);
 
-    return this.findOne(id);
+    const updatedOrderItem = await this.findOne(id);
+
+    // Notificar sobre mudança de status do item
+    this.ordersGateway.notifyOrderItemStatusUpdate(updatedOrderItem);
+
+    return updatedOrderItem;
   }
 
   /**

@@ -18,10 +18,13 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const table_entity_1 = require("./entities/table.entity");
 const table_status_enum_1 = require("../common/enums/table-status.enum");
+const orders_gateway_1 = require("../websocket/orders.gateway");
 let TablesService = class TablesService {
     tableRepository;
-    constructor(tableRepository) {
+    ordersGateway;
+    constructor(tableRepository, ordersGateway) {
         this.tableRepository = tableRepository;
+        this.ordersGateway = ordersGateway;
     }
     async create(createTableDto) {
         const existingTable = await this.tableRepository.findOne({
@@ -75,7 +78,9 @@ let TablesService = class TablesService {
     async updateStatus(id, updateStatusDto) {
         const table = await this.findOne(id);
         table.status = updateStatusDto.status;
-        return await this.tableRepository.save(table);
+        const updatedTable = await this.tableRepository.save(table);
+        this.ordersGateway.notifyTableStatusUpdate(updatedTable);
+        return updatedTable;
     }
     async remove(id) {
         const table = await this.findOne(id);
@@ -121,6 +126,8 @@ exports.TablesService = TablesService;
 exports.TablesService = TablesService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(table_entity_1.Table)),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
+    __param(1, (0, common_1.Inject)((0, common_1.forwardRef)(() => orders_gateway_1.OrdersGateway))),
+    __metadata("design:paramtypes", [typeorm_2.Repository,
+        orders_gateway_1.OrdersGateway])
 ], TablesService);
 //# sourceMappingURL=tables.service.js.map

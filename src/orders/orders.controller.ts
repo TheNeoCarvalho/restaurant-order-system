@@ -12,10 +12,12 @@ import {
   ParseIntPipe,
   HttpStatus,
   HttpCode,
+  ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { OrderItemsService } from '../order-items/order-items.service';
-import { CreateOrderDto, AddItemToOrderDto, UpdateOrderDto } from './dto';
+import { CreateOrderDto, AddItemToOrderDto, UpdateOrderDto, CloseOrderResponseDto } from './dto';
 import { UpdateOrderItemStatusDto } from '../order-items/dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -129,13 +131,56 @@ export class OrdersController {
   }
 
   /**
-   * Fechar comanda
+   * Fechar comanda com cálculo de total e geração de resumo
    * Apenas garçons e admins podem fechar comandas
+   * Inclui validações de segurança e arquivamento da comanda
    */
   @Post(':id/close')
   @Roles(UserRole.ADMIN, UserRole.WAITER)
-  async closeOrder(@Param('id', ParseUUIDPipe) id: string) {
-    return this.ordersService.closeOrder(id);
+  @HttpCode(HttpStatus.OK)
+  async closeOrder(@Param('id', ParseUUIDPipe) id: string, @Request() req): Promise<CloseOrderResponseDto> {
+    const logger = new Logger('OrdersController');
+    
+    // Validação adicional de segurança - verificar se o usuário tem permissão
+    const userRole = req.user.role;
+    const userId = req.user.sub;
+    
+    if (userRole !== UserRole.ADMIN && userRole !== UserRole.WAITER) {
+      logger.warn(`Tentativa de fechamento de comanda por usuário não autorizado: ${userId} (${userRole})`);
+      throw new ForbiddenException('Usuário não tem permissão para fechar comandas');
+    }
+
+    try {
+      // Executar o fechamento da comanda
+      const result = await this.ordersService.closeOrder(id);
+      
+      // Log da operação para auditoria
+      const auditInfo = {
+        orderId: id,
+        userId,
+        userRole,
+        tableNumber: result.order.table.number,
+        finalAmount: result.summary.totals.finalTotal,
+        timestamp: new Date().toISOString(),
+      };
+      
+      logger.log(`Comanda fechada com sucesso: ${JSON.stringify(auditInfo)}`);
+      
+      // Retornar resposta estruturada
+      return {
+        message: 'Comanda fechada com sucesso',
+        order: result.order,
+        summary: result.summary,
+        closedBy: {
+          userId,
+          role: userRole,
+          timestamp: auditInfo.timestamp,
+        },
+      };
+    } catch (error) {
+      logger.error(`Erro ao fechar comanda ${id}: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   /**

@@ -12,12 +12,16 @@ const typeorm_1 = require("@nestjs/typeorm");
 const tables_controller_1 = require("./tables.controller");
 const tables_service_1 = require("./tables.service");
 const table_entity_1 = require("./entities/table.entity");
+const websocket_module_1 = require("../websocket/websocket.module");
 let TablesModule = class TablesModule {
 };
 exports.TablesModule = TablesModule;
 exports.TablesModule = TablesModule = __decorate([
     (0, common_1.Module)({
-        imports: [typeorm_1.TypeOrmModule.forFeature([table_entity_1.Table])],
+        imports: [
+            typeorm_1.TypeOrmModule.forFeature([table_entity_1.Table]),
+            (0, common_1.forwardRef)(() => websocket_module_1.WebsocketModule),
+        ],
         controllers: [tables_controller_1.TablesController],
         providers: [tables_service_1.TablesService],
         exports: [tables_service_1.TablesService],

@@ -3,10 +3,12 @@ import { OrderItem } from './entities/order-item.entity';
 import { User } from '../users/entities/user.entity';
 import { UpdateOrderItemStatusDto } from './dto';
 import { OrderItemStatus } from '../common/enums/order-item-status.enum';
+import { OrdersGateway } from '../websocket/orders.gateway';
 export declare class OrderItemsService {
     private readonly orderItemRepository;
     private readonly userRepository;
-    constructor(orderItemRepository: Repository<OrderItem>, userRepository: Repository<User>);
+    private readonly ordersGateway;
+    constructor(orderItemRepository: Repository<OrderItem>, userRepository: Repository<User>, ordersGateway: OrdersGateway);
     findAll(): Promise<OrderItem[]>;
     findOne(id: string): Promise<OrderItem>;
     findByStatus(status: OrderItemStatus): Promise<OrderItem[]>;

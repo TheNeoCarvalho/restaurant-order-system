@@ -239,15 +239,49 @@ describe('OrdersController', () => {
       const mockOrder = {
         id: orderId,
         status: OrderStatus.CLOSED,
-        closedAt: new Date()
+        closedAt: new Date(),
+        table: { number: 1 },
+        waiter: { name: 'Test Waiter' },
+        items: []
+      };
+      
+      const mockSummary = {
+        orderId,
+        tableNumber: 1,
+        waiterName: 'Test Waiter',
+        openedAt: new Date(),
+        closedAt: new Date(),
+        items: [],
+        totals: {
+          subtotal: 0,
+          serviceCharge: 0,
+          taxAmount: 0,
+          finalTotal: 0,
+          serviceChargeRate: 0.10,
+          taxRate: 0.08,
+        },
+        totalItems: 0,
+        totalQuantity: 0,
       };
 
-      mockOrdersService.closeOrder.mockResolvedValue(mockOrder);
+      const mockServiceResult = { order: mockOrder, summary: mockSummary };
+      mockOrdersService.closeOrder.mockResolvedValue(mockServiceResult);
 
-      const result = await controller.closeOrder(orderId);
+      const mockReq = {
+        user: {
+          sub: 'user-uuid',
+          role: 'waiter'
+        }
+      };
+
+      const result = await controller.closeOrder(orderId, mockReq);
 
       expect(mockOrdersService.closeOrder).toHaveBeenCalledWith(orderId);
-      expect(result).toEqual(mockOrder);
+      expect(result.message).toBe('Comanda fechada com sucesso');
+      expect(result.order).toEqual(mockOrder);
+      expect(result.summary).toEqual(mockSummary);
+      expect(result.closedBy.userId).toBe('user-uuid');
+      expect(result.closedBy.role).toBe('waiter');
     });
   });
 
