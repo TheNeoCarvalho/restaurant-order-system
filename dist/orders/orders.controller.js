@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OrdersController = void 0;
 const common_1 = require("@nestjs/common");
+const swagger_1 = require("@nestjs/swagger");
 const orders_service_1 = require("./orders.service");
 const order_items_service_1 = require("../order-items/order-items.service");
 const dto_1 = require("./dto");
@@ -151,6 +152,27 @@ exports.OrdersController = OrdersController;
 __decorate([
     (0, common_1.Post)(),
     (0, roles_decorator_1.Roles)(user_role_enum_1.UserRole.ADMIN, user_role_enum_1.UserRole.WAITER),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Criar nova comanda',
+        description: 'Cria uma nova comanda para uma mesa. Apenas garçons e admins podem criar comandas.'
+    }),
+    (0, swagger_1.ApiBody)({ type: dto_1.CreateOrderDto }),
+    (0, swagger_1.ApiResponse)({
+        status: 201,
+        description: 'Comanda criada com sucesso'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 400,
+        description: 'Mesa já possui comanda ativa ou dados inválidos'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 403,
+        description: 'Acesso negado - apenas garçons e admins'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 404,
+        description: 'Mesa não encontrada'
+    }),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -160,6 +182,18 @@ __decorate([
 __decorate([
     (0, common_1.Get)(),
     (0, roles_decorator_1.Roles)(user_role_enum_1.UserRole.ADMIN),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Listar todas as comandas',
+        description: 'Retorna lista de todas as comandas do sistema. Apenas admins têm acesso.'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Lista de comandas retornada com sucesso'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 403,
+        description: 'Acesso negado - apenas administradores'
+    }),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
@@ -167,6 +201,28 @@ __decorate([
 __decorate([
     (0, common_1.Get)(':id'),
     (0, roles_decorator_1.Roles)(user_role_enum_1.UserRole.ADMIN),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Buscar comanda por ID',
+        description: 'Retorna detalhes de uma comanda específica'
+    }),
+    (0, swagger_1.ApiParam)({
+        name: 'id',
+        description: 'ID da comanda',
+        type: String,
+        format: 'uuid'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Comanda encontrada'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 404,
+        description: 'Comanda não encontrada'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 403,
+        description: 'Acesso negado - apenas administradores'
+    }),
     __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -200,6 +256,33 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':id/items'),
     (0, roles_decorator_1.Roles)(user_role_enum_1.UserRole.ADMIN, user_role_enum_1.UserRole.WAITER),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Adicionar item à comanda',
+        description: 'Adiciona um novo item do cardápio à comanda. Apenas garçons e admins podem adicionar itens.'
+    }),
+    (0, swagger_1.ApiParam)({
+        name: 'id',
+        description: 'ID da comanda',
+        type: String,
+        format: 'uuid'
+    }),
+    (0, swagger_1.ApiBody)({ type: dto_1.AddItemToOrderDto }),
+    (0, swagger_1.ApiResponse)({
+        status: 201,
+        description: 'Item adicionado com sucesso'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 400,
+        description: 'Item não disponível ou dados inválidos'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 403,
+        description: 'Acesso negado - apenas garçons e admins'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 404,
+        description: 'Comanda ou item do cardápio não encontrado'
+    }),
     __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -230,6 +313,33 @@ __decorate([
     (0, common_1.Post)(':id/close'),
     (0, roles_decorator_1.Roles)(user_role_enum_1.UserRole.ADMIN, user_role_enum_1.UserRole.WAITER),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Fechar comanda',
+        description: 'Fecha uma comanda, calcula o total com impostos e gera resumo detalhado. Apenas garçons e admins podem fechar comandas.'
+    }),
+    (0, swagger_1.ApiParam)({
+        name: 'id',
+        description: 'ID da comanda',
+        type: String,
+        format: 'uuid'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Comanda fechada com sucesso',
+        type: dto_1.CloseOrderResponseDto
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 400,
+        description: 'Comanda já está fechada ou possui itens pendentes'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 403,
+        description: 'Acesso negado - apenas garçons e admins'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 404,
+        description: 'Comanda não encontrada'
+    }),
     __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -289,6 +399,33 @@ __decorate([
 ], OrdersController.prototype, "findOneItem", null);
 __decorate([
     (0, common_1.Patch)('items/:itemId/status'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Atualizar status de um item',
+        description: 'Atualiza o status de um item específico da comanda. Permissões são validadas baseado no role do usuário.'
+    }),
+    (0, swagger_1.ApiParam)({
+        name: 'itemId',
+        description: 'ID do item da comanda',
+        type: String,
+        format: 'uuid'
+    }),
+    (0, swagger_1.ApiBody)({ type: dto_2.UpdateOrderItemStatusDto }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Status do item atualizado com sucesso'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 400,
+        description: 'Status inválido ou transição não permitida'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 403,
+        description: 'Usuário não tem permissão para esta transição de status'
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 404,
+        description: 'Item não encontrado'
+    }),
     __param(0, (0, common_1.Param)('itemId', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
@@ -368,6 +505,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], OrdersController.prototype, "hasPendingItems", null);
 exports.OrdersController = OrdersController = __decorate([
+    (0, swagger_1.ApiTags)('Orders'),
+    (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.Controller)('orders'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     __metadata("design:paramtypes", [orders_service_1.OrdersService,

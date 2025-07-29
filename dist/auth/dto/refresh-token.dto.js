@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RefreshTokenDto = void 0;
+const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 class RefreshTokenDto {
     refreshToken;
@@ -18,6 +19,10 @@ exports.RefreshTokenDto = RefreshTokenDto;
 __decorate([
     (0, class_validator_1.IsNotEmpty)({ message: 'Refresh token é obrigatório' }),
     (0, class_validator_1.IsString)({ message: 'Refresh token deve ser uma string' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'Token de renovação JWT',
+        example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+    }),
     __metadata("design:type", String)
 ], RefreshTokenDto.prototype, "refreshToken", void 0);
 //# sourceMappingURL=refresh-token.dto.js.map

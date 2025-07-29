@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateOrderItemDto = void 0;
+const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const validators_1 = require("../../common/validators");
 class CreateOrderItemDto {
@@ -20,16 +21,33 @@ class CreateOrderItemDto {
 exports.CreateOrderItemDto = CreateOrderItemDto;
 __decorate([
     (0, class_validator_1.IsUUID)('4', { message: 'ID do item do menu deve ser um UUID válido' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'ID do item do cardápio',
+        example: 'uuid-string',
+        format: 'uuid'
+    }),
     __metadata("design:type", String)
 ], CreateOrderItemDto.prototype, "menuItemId", void 0);
 __decorate([
     (0, validators_1.IsValidQuantity)(),
+    (0, swagger_1.ApiProperty)({
+        description: 'Quantidade do item',
+        example: 2,
+        minimum: 1,
+        type: Number
+    }),
     __metadata("design:type", Number)
 ], CreateOrderItemDto.prototype, "quantity", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)({ message: 'Instruções especiais devem ser uma string' }),
     (0, class_validator_1.MaxLength)(500, { message: 'Instruções especiais devem ter no máximo 500 caracteres' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'Instruções especiais para o preparo do item',
+        example: 'Sem cebola, ponto da carne mal passado',
+        required: false,
+        maxLength: 500
+    }),
     __metadata("design:type", String)
 ], CreateOrderItemDto.prototype, "specialInstructions", void 0);
 //# sourceMappingURL=create-order-item.dto.js.map

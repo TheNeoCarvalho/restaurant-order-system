@@ -12,6 +12,7 @@ import { OrdersModule } from './orders/orders.module';
 import { OrderItemsModule } from './order-items/order-items.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { CommonModule } from './common/common.module';
+import { HealthModule } from './health/health.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -30,6 +31,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     OrderItemsModule,
     WebsocketModule,
     CommonModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [

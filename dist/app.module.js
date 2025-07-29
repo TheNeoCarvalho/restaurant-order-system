@@ -21,6 +21,7 @@ const orders_module_1 = require("./orders/orders.module");
 const order_items_module_1 = require("./order-items/order-items.module");
 const websocket_module_1 = require("./websocket/websocket.module");
 const common_module_1 = require("./common/common.module");
+const health_module_1 = require("./health/health.module");
 const jwt_auth_guard_1 = require("./auth/guards/jwt-auth.guard");
 const roles_guard_1 = require("./auth/guards/roles.guard");
 let AppModule = class AppModule {
@@ -42,6 +43,7 @@ exports.AppModule = AppModule = __decorate([
             order_items_module_1.OrderItemsModule,
             websocket_module_1.WebsocketModule,
             common_module_1.CommonModule,
+            health_module_1.HealthModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [

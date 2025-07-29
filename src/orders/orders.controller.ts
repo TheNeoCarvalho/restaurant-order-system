@@ -15,6 +15,14 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiBody,
+} from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { OrderItemsService } from '../order-items/order-items.service';
 import { CreateOrderDto, AddItemToOrderDto, UpdateOrderDto, CloseOrderResponseDto } from './dto';
@@ -25,6 +33,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../common/enums/user-role.enum';
 import { OrderItemStatus } from '../common/enums/order-item-status.enum';
 
+@ApiTags('Orders')
+@ApiBearerAuth()
 @Controller('orders')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class OrdersController {
@@ -33,31 +43,75 @@ export class OrdersController {
     private readonly orderItemsService: OrderItemsService,
   ) {}
 
-  /**
-   * Criar nova comanda
-   * Apenas garçons e admins podem criar comandas
-   */
   @Post()
   @Roles(UserRole.ADMIN, UserRole.WAITER)
+  @ApiOperation({ 
+    summary: 'Criar nova comanda',
+    description: 'Cria uma nova comanda para uma mesa. Apenas garçons e admins podem criar comandas.'
+  })
+  @ApiBody({ type: CreateOrderDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Comanda criada com sucesso'
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Mesa já possui comanda ativa ou dados inválidos'
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado - apenas garçons e admins'
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Mesa não encontrada'
+  })
   async create(@Body() createOrderDto: CreateOrderDto, @Request() req) {
     return this.ordersService.create(createOrderDto, req.user.sub);
   }
 
-  /**
-   * Listar todas as comandas
-   * Todos os usuários autenticados podem ver as comandas
-   */
   @Get()
   @Roles(UserRole.ADMIN)
+  @ApiOperation({ 
+    summary: 'Listar todas as comandas',
+    description: 'Retorna lista de todas as comandas do sistema. Apenas admins têm acesso.'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de comandas retornada com sucesso'
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado - apenas administradores'
+  })
   async findAll() {
     return this.ordersService.findAll();
   }
 
-  /**
-   * Buscar comanda por ID
-   */
   @Get(':id')
   @Roles(UserRole.ADMIN)
+  @ApiOperation({ 
+    summary: 'Buscar comanda por ID',
+    description: 'Retorna detalhes de uma comanda específica'
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID da comanda',
+    type: String,
+    format: 'uuid'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Comanda encontrada'
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Comanda não encontrada'
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado - apenas administradores'
+  })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.ordersService.findOne(id);
   }
@@ -93,12 +147,35 @@ export class OrdersController {
     return this.ordersService.update(id, updateOrderDto);
   }
 
-  /**
-   * Adicionar item à comanda
-   * Apenas garçons e admins podem adicionar itens
-   */
   @Post(':id/items')
   @Roles(UserRole.ADMIN, UserRole.WAITER)
+  @ApiOperation({ 
+    summary: 'Adicionar item à comanda',
+    description: 'Adiciona um novo item do cardápio à comanda. Apenas garçons e admins podem adicionar itens.'
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID da comanda',
+    type: String,
+    format: 'uuid'
+  })
+  @ApiBody({ type: AddItemToOrderDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Item adicionado com sucesso'
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Item não disponível ou dados inválidos'
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado - apenas garçons e admins'
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Comanda ou item do cardápio não encontrado'
+  })
   async addItem(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() addItemDto: AddItemToOrderDto,
@@ -134,14 +211,36 @@ export class OrdersController {
     return this.ordersService.updateItemQuantity(id, itemId, quantity);
   }
 
-  /**
-   * Fechar comanda com cálculo de total e geração de resumo
-   * Apenas garçons e admins podem fechar comandas
-   * Inclui validações de segurança e arquivamento da comanda
-   */
   @Post(':id/close')
   @Roles(UserRole.ADMIN, UserRole.WAITER)
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ 
+    summary: 'Fechar comanda',
+    description: 'Fecha uma comanda, calcula o total com impostos e gera resumo detalhado. Apenas garçons e admins podem fechar comandas.'
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID da comanda',
+    type: String,
+    format: 'uuid'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Comanda fechada com sucesso',
+    type: CloseOrderResponseDto
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Comanda já está fechada ou possui itens pendentes'
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Acesso negado - apenas garçons e admins'
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Comanda não encontrada'
+  })
   async closeOrder(@Param('id', ParseUUIDPipe) id: string, @Request() req): Promise<CloseOrderResponseDto> {
     const logger = new Logger('OrdersController');
     
@@ -255,11 +354,34 @@ export class OrdersController {
     return this.orderItemsService.findOne(itemId);
   }
 
-  /**
-   * Atualizar status de um item
-   * Permissões são validadas no service baseado no role do usuário
-   */
   @Patch('items/:itemId/status')
+  @ApiOperation({ 
+    summary: 'Atualizar status de um item',
+    description: 'Atualiza o status de um item específico da comanda. Permissões são validadas baseado no role do usuário.'
+  })
+  @ApiParam({
+    name: 'itemId',
+    description: 'ID do item da comanda',
+    type: String,
+    format: 'uuid'
+  })
+  @ApiBody({ type: UpdateOrderItemStatusDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Status do item atualizado com sucesso'
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Status inválido ou transição não permitida'
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Usuário não tem permissão para esta transição de status'
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Item não encontrado'
+  })
   async updateItemStatus(
     @Param('itemId', ParseUUIDPipe) itemId: string,
     @Body() updateStatusDto: UpdateOrderItemStatusDto,

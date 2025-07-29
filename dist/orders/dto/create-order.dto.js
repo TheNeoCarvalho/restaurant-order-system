@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateOrderDto = void 0;
+const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
 const create_order_item_dto_1 = require("./create-order-item.dto");
@@ -20,6 +21,11 @@ class CreateOrderDto {
 exports.CreateOrderDto = CreateOrderDto;
 __decorate([
     (0, class_validator_1.IsNumber)({}, { message: 'ID da mesa deve ser um número' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'ID da mesa para a qual a comanda será criada',
+        example: 1,
+        type: Number
+    }),
     __metadata("design:type", Number)
 ], CreateOrderDto.prototype, "tableId", void 0);
 __decorate([
@@ -27,6 +33,11 @@ __decorate([
     (0, class_validator_1.ValidateNested)({ each: true }),
     (0, class_transformer_1.Type)(() => create_order_item_dto_1.CreateOrderItemDto),
     (0, class_validator_1.IsOptional)(),
+    (0, swagger_1.ApiProperty)({
+        description: 'Lista de itens iniciais da comanda (opcional)',
+        type: [create_order_item_dto_1.CreateOrderItemDto],
+        required: false
+    }),
     __metadata("design:type", Array)
 ], CreateOrderDto.prototype, "items", void 0);
 //# sourceMappingURL=create-order.dto.js.map
